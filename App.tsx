@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { QUESTIONS_12TH, QUESTIONS_UG, parseCoursesFromCSV } from './constants';
+import { QUESTIONS_12TH, QUESTIONS_UG } from './constants';
 import { QuestionCard } from './components/QuestionCard';
 import { LoadingScreen } from './components/LoadingScreen';
 import { ResultsView } from './components/ResultsView';
@@ -18,10 +18,6 @@ const App: React.FC = () => {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [customCourses, setCustomCourses] = useState<Course[]>([]);
-  const [customFileName, setCustomFileName] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   const activeQuestions = selectedLevel === '12' ? QUESTIONS_12TH : QUESTIONS_UG;
 
   const handleStart = () => {
@@ -37,31 +33,7 @@ const App: React.FC = () => {
     setAppStep('QUIZ');
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const content = e.target?.result as string;
-      if (content) {
-        try {
-          const parsed = parseCoursesFromCSV(content);
-          if (parsed.length > 0) {
-            setCustomCourses(parsed);
-            setCustomFileName(file.name);
-            setError(null);
-          } else {
-            setError("Could not parse courses from CSV. Please check the format.");
-          }
-        } catch (err) {
-          console.error(err);
-          setError("Failed to parse CSV file.");
-        }
-      }
-    };
-    reader.readAsText(file);
-  };
 
   const handleAnswer = async (value: string) => {
     const questionId = activeQuestions[currentQuestionIndex].id;
@@ -73,7 +45,7 @@ const App: React.FC = () => {
     } else {
       setAppStep('LOADING');
       try {
-        const result = await analyzeCareerPath(nextAnswers, selectedLevel, customCourses);
+        const result = await analyzeCareerPath(nextAnswers, selectedLevel);
         setAnalysisResult(result);
         setAppStep('RESULTS');
       } catch (err) {
@@ -84,167 +56,132 @@ const App: React.FC = () => {
     }
   };
 
-  // 1. WELCOME SCREEN (Light Theme)
+  // 1. WELCOME SCREEN (Deep Corporate Theme)
   if (appStep === 'WELCOME') {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6">
-        <div className="max-w-5xl w-full bg-white/80 backdrop-blur-xl rounded-[2.5rem] shadow-2xl border border-white/50 overflow-hidden flex flex-col md:flex-row relative">
+      <div className="min-h-screen flex items-center justify-center p-6 bg-pink-50 relative overflow-hidden">
+        {/* Background Decorations */}
+        <div className="absolute top-[-10%] left-[-10%] w-[40rem] h-[40rem] bg-pink-200/40 rounded-full blur-[100px] pointer-events-none"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[35rem] h-[35rem] bg-pink-300/30 rounded-full blur-[120px] pointer-events-none"></div>
+        <div className="absolute top-[20%] right-[10%] w-[20rem] h-[20rem] bg-white/60 rounded-full blur-[80px] pointer-events-none mix-blend-overlay"></div>
+        <div className="max-w-5xl w-full bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row relative animate-fade-in-up">
 
-          {/* Left Decorative Side */}
-          <div className="md:w-1/2 bg-gradient-to-br from-indigo-600 to-violet-700 p-12 text-white flex flex-col justify-center relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
-              <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                <path d="M0 100 C 20 0 50 0 100 100 Z" fill="white" fillOpacity="0.2" />
-              </svg>
-            </div>
+          {/* Left Brand Side */}
+          <div className="md:w-1/2 bg-white p-12 text-[#1D1D1F] flex flex-col justify-center relative overflow-hidden border-r border-slate-100">
+            {/* Abstract geometric accents */}
+            <div className="absolute top-0 right-0 w-64 h-64 bg-pink-400 rounded-full blur-[80px] opacity-20 translate-x-1/2 -translate-y-1/2"></div>
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-[#ED1164] rounded-full blur-[60px] opacity-10 -translate-x-1/4 translate-y-1/4"></div>
+
             <div className="relative z-10">
-              <span className="inline-block px-3 py-1 bg-white/20 rounded-full text-xs font-bold tracking-wider mb-6 border border-white/30 backdrop-blur-md">AI-POWERED GUIDANCE</span>
-              <h1 className="text-5xl font-extrabold mb-6 leading-tight tracking-tight">Design Your <br />Future.</h1>
-              <p className="text-indigo-100 text-lg mb-8 leading-relaxed font-light">
-                Pathfinder AI analyzes your unique skill signature to recommend degrees and careers where you will thrive, not just survive.
-              </p>
-              <div className="flex items-center gap-3 text-sm font-medium bg-black/10 w-fit px-4 py-2 rounded-xl border border-white/10 backdrop-blur-sm">
-                <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
+              <div className="flex items-center gap-3 mb-8">
+                <img src="/appli-logo.png" alt="Appli Logo" className="h-14" />
+              </div>
 
+              <h1 className="text-5xl font-bold mb-6 leading-tight font-sans">
+                Design Your <span className="text-[#ED1164]">Future Career.</span>
+              </h1>
+              <p className="text-slate-600 text-lg mb-8 leading-relaxed font-light max-w-sm">
+                Advanced AI analysis of your skills, passions, and psychological drivers to recommend the perfect academic path.
+              </p>
+
+              <div className="flex items-center gap-4 text-sm font-medium opacity-60">
+                <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div> AI-Powered</span>
+                <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-[#ED1164]"></div> Data-Backed</span>
               </div>
             </div>
           </div>
 
           {/* Right Action Side */}
-          <div className="md:w-1/2 p-12 flex flex-col justify-center items-center text-center bg-white">
-            <div className="mb-10">
-              <div className="w-20 h-20 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto mb-6 shadow-sm border border-indigo-100">
-                <svg className="w-10 h-10 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <div className="md:w-1/2 p-12 flex flex-col justify-center items-center text-center bg-white relative">
+            <div className="mb-10 max-w-xs">
+              <div className="w-16 h-16 rounded-2xl bg-pink-50 flex items-center justify-center mx-auto mb-6">
+                <svg className="w-8 h-8 text-[#ED1164]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
               </div>
-              <h2 className="text-3xl font-bold text-slate-800 mb-3">Ready to start?</h2>
-              <p className="text-slate-500">Discover your academic archetype in 2 minutes.</p>
+              <h2 className="text-2xl font-bold text-slate-900 mb-3">Begin Assessment</h2>
+              <p className="text-slate-500 text-sm leading-relaxed">
+                Discover your professional archetype and ideal degree matches in under 3 minutes.
+              </p>
             </div>
 
             <button
               onClick={handleStart}
-              className="w-full bg-slate-900 text-white font-bold py-4 px-8 rounded-xl hover:bg-slate-800 hover:scale-[1.02] transition-all duration-200 shadow-xl shadow-slate-200"
+              className="w-full bg-[#1D1D1F] hover:bg-[#333] text-white font-bold py-4 px-8 rounded-xl transition-all duration-200 shadow-xl hover:-translate-y-0.5"
             >
-              Start Assessment
+              Start Your Journey
             </button>
-            {error && <p className="mt-4 text-red-600 text-sm bg-red-50 px-4 py-2 rounded-lg border border-red-100">{error}</p>}
+            {error && <p className="mt-4 text-red-600 text-xs bg-red-50 px-3 py-2 rounded border border-red-100">{error}</p>}
           </div>
         </div>
       </div>
     );
   }
 
-  // 2. LEVEL SELECTION (Light Theme)
+  // 2. LEVEL SELECTION
   if (appStep === 'SELECT_LEVEL') {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6">
+      <div className="min-h-screen flex items-center justify-center p-6 bg-white">
         <div className="max-w-4xl w-full">
           <div className="text-center mb-12 animate-fade-in-up">
-            <button onClick={() => setAppStep('WELCOME')} className="text-slate-400 hover:text-slate-600 mb-6 text-sm flex items-center justify-center gap-2 mx-auto transition-colors font-medium">
-              ← Back to Home
+            <button onClick={() => setAppStep('WELCOME')} className="text-slate-400 hover:text-[#ED1164] mb-8 text-sm flex items-center justify-center gap-2 mx-auto transition-colors font-medium">
+              ← Return Home
             </button>
-            <h2 className="text-4xl font-bold text-slate-900 mb-4">Current Education Level</h2>
-            <p className="text-slate-500 text-lg">We tailor recommendations based on your journey.</p>
+            <h2 className="text-3xl font-bold text-slate-900 mb-3">Choose the Stream you wish to explore</h2>
+            <p className="text-slate-500">We tailor our AI model based on your education level.</p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-6 mb-12 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
             <button
               onClick={() => handleLevelSelect('12')}
-              className="group relative bg-white p-8 rounded-3xl border-2 border-transparent hover:border-indigo-500 shadow-xl shadow-slate-200/50 hover:shadow-indigo-500/10 transition-all duration-300 text-left overflow-hidden"
+              className="group relative bg-white p-8 rounded-2xl border border-slate-200 hover:border-[#ED1164] hover:ring-1 hover:ring-[#ED1164] shadow-sm hover:shadow-md transition-all duration-200 text-left"
             >
-              <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
-                <span className="text-3xl">🎓</span>
+              <div className="w-12 h-12 bg-pink-50 rounded-xl flex items-center justify-center mb-6 group-hover:bg-[#ED1164] group-hover:text-white transition-colors duration-200">
+                <span className="text-2xl">🎓</span>
               </div>
-              <h3 className="text-2xl font-bold text-slate-800 mb-2">After Class 12</h3>
-              <p className="text-slate-500">Explore Undergraduate degrees (B.Tech, B.Des, BBA) tailored to your strengths.</p>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Explore Undergraduate Programs </h3>
+              <p className="text-slate-500 text-sm">Ideally for students seeking Undergraduate degrees (B.Tech, B.Des, BBA).</p>
             </button>
 
             <button
               onClick={() => handleLevelSelect('UG')}
-              className="group relative bg-white p-8 rounded-3xl border-2 border-transparent hover:border-violet-500 shadow-xl shadow-slate-200/50 hover:shadow-violet-500/10 transition-all duration-300 text-left overflow-hidden"
+              className="group relative bg-white p-8 rounded-2xl border border-slate-200 hover:border-[#ED1164] hover:ring-1 hover:ring-[#ED1164] shadow-sm hover:shadow-md transition-all duration-200 text-left"
             >
-              <div className="w-14 h-14 bg-violet-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
-                <span className="text-3xl">🚀</span>
+              <div className="w-12 h-12 bg-pink-50 rounded-xl flex items-center justify-center mb-6 group-hover:bg-[#ED1164] group-hover:text-white transition-colors duration-200">
+                <span className="text-2xl">🚀</span>
               </div>
-              <h3 className="text-2xl font-bold text-slate-800 mb-2">Post-Graduation</h3>
-              <p className="text-slate-500">Explore Master's programs and specialized career pivots (MBA, M.Tech, etc.).</p>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Explore Postgraduate Programs</h3>
+              <p className="text-slate-500 text-sm">Ideally for graduates seeking Master's programs or career pivots.</p>
             </button>
           </div>
 
-          {/* Custom Data Upload */}
-          <div className="max-w-lg mx-auto animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-            <div className="bg-white/60 backdrop-blur-md rounded-2xl p-6 border border-white shadow-lg shadow-slate-200/50">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="font-semibold text-slate-700 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                  Upload Custom Catalog
-                </h4>
-                {customFileName && (
-                  <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100">
-                    Active
-                  </span>
-                )}
-              </div>
 
-              <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-sm text-slate-700 font-medium py-2.5 px-4 rounded-xl transition-colors"
-                >
-                  {customFileName ? customFileName : 'Choose CSV File'}
-                </button>
-                {customFileName && (
-                  <button
-                    onClick={() => {
-                      setCustomCourses([]);
-                      setCustomFileName(null);
-                      if (fileInputRef.current) fileInputRef.current.value = "";
-                    }}
-                    className="bg-red-50 hover:bg-red-100 text-red-500 px-4 rounded-xl transition-colors"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-              {error && <p className="text-xs text-red-500 mt-3 text-center">{error}</p>}
-            </div>
-          </div>
         </div>
       </div>
     );
   }
 
-  // 3. MAIN APP LAYOUT (Light Theme)
+  // 3. MAIN APP LAYOUT
   return (
-    <div id="app-root" className="min-h-screen p-4 md:p-8 relative">
-      {/* Background blobs */}
-      <div className="fixed top-0 left-0 w-full h-full pointer-events-none z-[-1] overflow-hidden">
-        <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] bg-indigo-200/40 rounded-full blur-[100px]"></div>
-        <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] bg-violet-200/40 rounded-full blur-[100px]"></div>
-      </div>
-
-      <header className="max-w-6xl mx-auto mb-8 flex items-center justify-between">
-        <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setAppStep('WELCOME')}>
-          <div className="bg-white shadow-md w-10 h-10 rounded-xl flex items-center justify-center text-indigo-600 font-bold border border-white group-hover:scale-105 transition-transform">P</div>
-          <div>
-            <span className="font-bold text-xl text-slate-800 tracking-tight block leading-none">Pathfinder</span>
-            <span className="text-xs text-indigo-500 font-semibold tracking-wider">AI GUIDANCE</span>
-          </div>
+    <div id="app-root" className="min-h-screen bg-white text-slate-900 font-sans">
+      <header className={`mx-auto px-6 py-6 flex items-center justify-between transition-all duration-300 ${appStep === 'RESULTS' ? 'max-w-7xl' : 'max-w-5xl'}`}>
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setAppStep('WELCOME')}>
+          <img src="/appli-logo.png" alt="Appli Logo" className="h-8" />
         </div>
 
-        <div className="flex flex-col items-end">
+        <div>
           {appStep === 'QUIZ' && (
-            <span className="px-3 py-1 bg-white/60 backdrop-blur rounded-full text-xs text-slate-600 font-medium border border-white shadow-sm">
-              {selectedLevel === '12' ? 'Undergrad Track' : 'Postgrad Track'}
-            </span>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-full border border-slate-200 shadow-sm">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+              <span className="text-xs font-semibold text-slate-600">
+                {selectedLevel === '12' ? 'Undergrad Track' : 'Postgrad Track'}
+              </span>
+            </div>
           )}
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto">
+      <main className={`mx-auto px-6 pb-12 transition-all duration-300 ${appStep === 'RESULTS' ? 'max-w-7xl' : 'max-w-5xl'}`}>
         {appStep === 'QUIZ' ? (
           <QuestionCard
             question={activeQuestions[currentQuestionIndex]}

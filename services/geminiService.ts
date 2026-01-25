@@ -1,16 +1,32 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { COURSE_CATALOG, MASTERS_CATALOG } from "../constants";
+import { COURSE_CATALOG, MASTERS_CATALOG, SKILL_COLUMNS, VALID_COURSE_NAMES } from "../constants";
 import { AnalysisResult, AnswerMap, Course } from "../types";
 
 const processEnvApiKey = process.env.API_KEY;
 
 if (!processEnvApiKey) {
-  console.error("API_KEY is missing from process.env");
+  console.warn("⚠️ API_KEY is missing. The app will run in SIMULATION MODE.");
 }
 
-const ai = new GoogleGenAI({ apiKey: processEnvApiKey });
+// Safely initialize AI only if key exists, otherwise null
+const ai = processEnvApiKey ? new GoogleGenAI({ apiKey: processEnvApiKey }) : null;
 
-const RESPONSE_SCHEMA: Schema = {
+// --- SCHEMAS ---
+
+const VECTOR_SCHEMA: Schema = {
+  type: Type.OBJECT,
+  description: "A mapping of skill traits to relevance scores (0-1) based on user profile.",
+  properties: {
+    weights: {
+      type: Type.OBJECT,
+      properties: Object.fromEntries(SKILL_COLUMNS.map(skill => [skill, { type: Type.NUMBER }])),
+      required: [], // All optional, but model should fill relevant ones
+    }
+  },
+  required: ["weights"]
+};
+
+const FINAL_RESPONSE_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
     archetype: {
@@ -57,22 +73,22 @@ const RESPONSE_SCHEMA: Schema = {
     },
     recommendations: {
       type: Type.ARRAY,
-      description: "Top 3 recommended courses/degrees. Can be from the reference dataset OR generic best-fit valid degrees.",
+      description: "Final top 3 selection from the provided candidate list. MUST be EXACT strings from the list.",
       items: {
         type: Type.OBJECT,
         properties: {
-          degree: { type: Type.STRING, description: "The degree type extracted from the name (e.g. 'B.Des', 'B.Tech', 'MBA', 'B.Sc')." },
-          courseName: { type: Type.STRING, description: "The specific name of the course or degree program." },
-          matchReason: { type: Type.STRING, description: "Why this fits the archetype, referencing specific user answers." },
-          dataInsight: { type: Type.STRING, description: "Technical explanation of the skill match (e.g. 'Matches expanded tags from Q2')." },
-          relevanceScore: { type: Type.INTEGER, description: "0-100" },
+          degree: { type: Type.STRING },
+          courseName: { type: Type.STRING },
+          matchReason: { type: Type.STRING },
+          dataInsight: { type: Type.STRING },
+          relevanceScore: { type: Type.INTEGER },
         },
         required: ["degree", "courseName", "matchReason", "dataInsight", "relevanceScore"],
       },
     },
     alternativePathways: {
       type: Type.ARRAY,
-      description: "2-3 alternative career paths.",
+      description: "2-3 alternative career paths from the provided candidate list.",
       items: {
         type: Type.OBJECT,
         properties: {
@@ -87,7 +103,7 @@ const RESPONSE_SCHEMA: Schema = {
       type: Type.OBJECT,
       description: "Simulated statistics for people with this specific archetype.",
       properties: {
-        headline: { type: Type.STRING, description: "A catchy header about this cohort, e.g., 'People like you often thrive in...'" },
+        headline: { type: Type.STRING },
         topCareers: {
           type: Type.ARRAY,
           items: {
@@ -106,20 +122,263 @@ const RESPONSE_SCHEMA: Schema = {
       },
       required: ["headline", "topCareers", "commonInterests"],
     },
+    audioScript: { type: Type.STRING, description: "A 30-45 second conversational script. Speak like a mentor, not a machine. Use contractions ('You're', 'We've'), warm tone, and short sentences. No 'Based on your inputs'. Just jump in." },
   },
-  required: ["archetype", "visionBoard", "skillSignature", "recommendations", "alternativePathways", "communityStats"],
+  required: ["archetype", "visionBoard", "skillSignature", "recommendations", "alternativePathways", "communityStats", "audioScript"],
 };
+
+
+
+// --- DETERMINISTIC CALIBRATION LAYER ---
+// Map explicit answers to specific CSV columns to ensure "Scientific" accuracy.
+const TRAIT_MAP: Record<string, string[]> = {
+  // Q3: Work Day Preference
+  "Data Puzzle": ["Problem Solving", "Analytical Reasoning", "Logical Reasoning", "Quantitative Analysis"],
+  "Creative Design": ["Creativity & Innovation", "Digital Literacy", "Presentation Skills", "Design Thinking"], // 'Design Thinking' if available, else mapped to closest
+  "Team Vision": ["Leadership", "Strategic Thinking", "Teamwork", "Public Speaking"],
+  "Helping One-on-One": ["Interpersonal Skills", "Emotional Intelligence", "Social Responsibility", "Psychology"],
+
+  // Q4: Comfort Zone
+  "Numbers & Data": ["Quantitative Analysis", "Data Interpretation", "Statistics", "Finance & Accounting", "Mathematics"],
+  "People & Teams": ["Teamwork", "Human Resource Management", "Conflict Resolution", "Cross-Cultural Communication"],
+  "Words & Ideas": ["Written Communication", "Verbal Communication", "Research Skills", "Critical Thinking"],
+  "Tools & Objects": ["Computer Literacy", "Project Management", "Digital Literacy"],
+
+  // Q5: Motivation
+  "Innovation": ["Creativity & Innovation", "Self-Learning", "Curiosity", "Entrepreneurship"],
+  "Impact": ["Social Responsibility", "Ethical Reasoning", "Sustainability Awareness", "Environmental Studies"],
+  "Expertise": ["Research Skills", "Attention to Detail", "Self-Motivation"],
+  "Leadership": ["Leadership", "Decision Making", "Business Management", "Negotiation"]
+};
+
+const calculateBaseVector = (answers: AnswerMap): Record<string, number> => {
+  const vector: Record<string, number> = {};
+
+  Object.values(answers).forEach(ans => {
+    // Check if the answer (or part of it) matches our keys
+    const traits = TRAIT_MAP[ans] || [];
+    traits.forEach(trait => {
+      // 1.0 is a strong signal for an explicit choice
+      vector[trait] = (vector[trait] || 0) + 1.0;
+    });
+  });
+
+  return vector;
+};
+
+// --- HYBRID ENGINE STEPS ---
+
+// Helper: Robustly extract text from Gemini response
+const extractTextFromResponse = (response: any): string => {
+  try {
+    // 1. Try standard helper method
+    if (typeof response.text === 'function') {
+      return response.text();
+    }
+    // 2. Try candidates array (Google GenAI SDK standard structure)
+    if (response.candidates && response.candidates.length > 0) {
+      const candidate = response.candidates[0];
+      if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
+        return candidate.content.parts[0].text || "{}";
+      }
+    }
+    // 3. Fallback to raw text property if it exists
+    if (typeof response.text === 'string') {
+      return response.text;
+    }
+    console.warn("Gemini Response contained no text:", JSON.stringify(response));
+    return "{}";
+  } catch (e) {
+    console.error("Error extracting text from Gemini response:", e);
+    return "{}";
+  }
+};
+
+// Step 1: Extract User Vector AND Search Keywords using LLM
+const extractUserVector = async (formattedAnswers: string): Promise<{ weights: Record<string, number>, keywords: string[] }> => {
+  const prompt = `
+      TASK: Analyze the user's career profile to build a comprehensive "Psychometric Application Vector".
+      
+      USER PROFILE:
+      ${formattedAnswers}
+
+      TRAIT LIST:
+      ${SKILL_COLUMNS.join(', ')}
+
+      INSTRUCTIONS:
+      1. **Explicit Subject Priority**: If the user mentions specific subjects (e.g. "Math", "Biology"), add them to 'searchKeywords'.
+      2. **Psychometric Scoring (0.0 - 1.0)**:
+         - **High Weight (0.85 - 1.0)**: Traits explicitly demanded by the user's answers.
+         - **Medium Weight (0.4 - 0.7)**: Traits *inferred* from the user's vibe, flow state, or ideal work day. (e.g. "Gaming" -> Problem Solving + Digital Literacy).
+         - **Low Weight (0.0)**: Traits clearly irrelevant.
+      3. **Goal**: Create a rich, nuanced profile, not just a keyword match. The user wants to feel "understood".
+      4. **Output**: JSON with 'weights' object and 'searchKeywords' array.
+    `;
+
+  if (!ai) throw new Error("API Key missing - Simulation Mode");
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: prompt,
+    config: {
+      systemInstruction: "You are an expert career psychologist. Output strictly valid JSON.",
+      responseMimeType: "application/json",
+      responseSchema: VECTOR_SCHEMA,
+      temperature: 0.2, // Slightly higher temp for inference
+    },
+  });
+
+  // Safe text extraction
+  const jsonText = extractTextFromResponse(response);
+  const data = JSON.parse(jsonText);
+  return { weights: data.weights, keywords: data.searchKeywords || [] };
+};
+
+// Step 2: Scout/Score Courses (Client-Side Math + Keyword Search)
+const scoutCourses = (userVector: Record<string, number>, keywords: string[], catalog: Course[]): Course[] => {
+  const scored = catalog.map(course => {
+    // SCORING WEIGHTS
+    // 1. Keyword Match: +10.0 per keyword (Nice to have, but not overwhelming)
+    // 2. Trait Match: Sum of (userWeight * courseWeight) * 1000. 
+    //    Typical course weight ~0.02. Typical user weight ~0.9. Product ~0.018.
+    //    With 20 traits, total sum could be ~0.36. 
+    //    Multiply by 1000 => 360 points.
+    //    This makes personality match (360) > keyword match (10-20).
+
+    let score = 0;
+    let peakMatch = 0;
+    let matchedKeywords = 0;
+
+    // 1. KEYWORD SEARCH BONUS (The "Search Engine" Logic - DOWNGRADED)
+    // Now a helping hand, not a kingmaker.
+    const normalizedName = course.name.toLowerCase();
+    keywords.forEach(kw => {
+      const cleanKw = kw.toLowerCase().trim();
+      if (cleanKw.length > 2 && normalizedName.includes(cleanKw)) {
+        score += 15.0;
+        matchedKeywords++;
+      }
+    });
+
+    // 2. DOT PRODUCT (The "Personality" Logic - UPGRADED)
+    // We want this to be the primary driver.
+    if (course.weights) {
+      for (const [skill, weight] of Object.entries(course.weights)) {
+        const userW = userVector[skill] || 0;
+
+        // Only count if both exist to avoid noise
+        if (userW > 0.1 && weight > 0) {
+          const matchVal = (userW * weight);
+          score += (matchVal * 1500.0); // Big multiplier to make this the dominant number
+
+          if (matchVal > peakMatch) peakMatch = matchVal;
+        }
+      }
+    }
+
+    // 3. SPIKE BONUS (The "Niche" Logic)
+    // Reward single high-affinity matches (e.g. user loves Art, course is purely Art)
+    score += (peakMatch * 3000.0);
+
+    return { ...course, tempScore: score };
+  });
+
+  return scored.sort((a, b) => (b as any).tempScore - (a as any).tempScore);
+};
+
+// Step 3: Final Narrative and Selection
+const generateFinalReport = async (
+  topCourses: Course[],
+  formattedAnswers: string,
+  isUG: boolean
+): Promise<AnalysisResult> => {
+  // Pass top 150 candidates to LLM to ensure broad consideration
+  const coursesContext = topCourses.slice(0, 150).map(c =>
+    `ID:${c.id}|Name:"${c.name}"|Score:${(c as any).tempScore?.toFixed(1)}|Category:${c.category}`
+  ).join("\n");
+
+  const prompt = `
+    TASK: Select the final 3 Recommendations and 3 Alternative Pathways from the TOP 20 mathematically ranked candidates below.
+    
+    USER PROFILE:
+    ${formattedAnswers}
+
+    TOP 20 CANDIDATES (Ranked by Math Score):
+    ${coursesContext}
+
+    INSTRUCTIONS:
+    1. **Strict Selection**: You MUST pick courses *only* from the provided list. Use exact names. Do NOT invent or Hallucinate new course names.
+    2. **Selection Logic**:
+       - Pick the top scoring ones for 'recommendations'.
+       - Pick diverse/niche ones for 'alternativePathways'.
+    3. **Archetype**: Assign a creative "Archetype" title (e.g. "The Eco-Strategist").
+    4. **Narrative**: Explain *why* these specific courses fit the user's answers.
+    5. **Audio Script**: Write a script for the text-to-speech engine. 
+       - **Tone**: Warm, conversational, human. Use contractions (You're, It's, Let's). Avoid robotic phrases.
+       - **Structure**:
+         1. **Hook**: Direct, personal opening.
+         2. **The Why**: Connect 2 specific drivers to the course.
+         3. **The Vision**: End with their future self.
+       - **Example**: "Hey there, [Archetype]. valid. It's clear you love [Driver A] and [Driver B], which is exactly why [Course Name] is such a strong fit. Imagine yourself [Vision Highlight]. That's the future waiting for you. Let's make it happen."
+  `;
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: prompt,
+    config: {
+      systemInstruction: "You are a career counselor. Output strictly valid JSON matching the provided schema. You must ONLY select course names from the provided list.",
+      responseMimeType: "application/json",
+      responseSchema: FINAL_RESPONSE_SCHEMA,
+    },
+  });
+
+  const text = extractTextFromResponse(response);
+  const result = JSON.parse(text) as AnalysisResult;
+
+  // --- STRICT VALIDATION LAYER ---
+  // Ensure every recommended course actually exists in our CSV data.
+  // If the LLM hallucinates a name, we replace it with the highest-ranked valid course.
+
+  const validateAndFixCourse = (cName: string, fallback: Course): string => {
+    if (VALID_COURSE_NAMES.has(cName)) return cName;
+    console.warn(`⚠️ LLM Hallucinated Course: "${cName}".Replacing with: "${fallback.name}"`);
+    return fallback.name;
+  };
+
+  // Fix Recommendations
+  result.recommendations = result.recommendations.map((rec, i) => {
+    // Fallback logic: Use the top ranked courses from our mathematical scout as safety nets
+    const fallback = topCourses[i] || topCourses[0];
+    return {
+      ...rec,
+      courseName: validateAndFixCourse(rec.courseName, fallback),
+      relevanceScore: Math.min(rec.relevanceScore, 100) // Ensure score max is 100
+    };
+  });
+
+  // Fix Alternatives
+  result.alternativePathways = result.alternativePathways.map((alt, i) => {
+    // Use slightly lower ranked courses for alternatives to ensure diversity
+    const fallback = topCourses[i + 3] || topCourses[topCourses.length - 1];
+    return {
+      ...alt,
+      courseName: validateAndFixCourse(alt.courseName, fallback)
+    };
+  });
+
+  return result;
+};
+
+
+// --- MAIN FUNCTION ---
 
 export const analyzeCareerPath = async (
   answers: AnswerMap,
-  level: '12' | 'UG',
-  customCourses?: Course[]
+  level: '12' | 'UG'
 ): Promise<AnalysisResult> => {
   const isUG = level === 'UG';
+  const catalog = isUG ? MASTERS_CATALOG : COURSE_CATALOG;
 
-  const catalog = customCourses && customCourses.length > 0 ? customCourses : (isUG ? MASTERS_CATALOG : COURSE_CATALOG);
-
-  // Context mapping aligns with constants.ts questions
   const qContext = isUG ? {
     1: "Reason for Change (Drive)",
     2: "Desired Hard Skills (CRITICAL - Extract keywords here)",
@@ -137,150 +396,49 @@ export const analyzeCareerPath = async (
   const formattedAnswers = Object.entries(answers)
     .map(([qId, ans]) => {
       const id = parseInt(qId);
-      const context = qContext[id as keyof typeof qContext] || `Question ${id}`;
+      const context = qContext[id as keyof typeof qContext] || `Question ${id} `;
       return `[${context}]: "${ans}"`;
     })
     .join("\n");
 
 
-  /* 
-   * LOGIC UPDATE: 
-   * We now have TWO distinct distinct instruction sets.
-   * 1. MATCHING MODE (Custom Catalog): Strict vector scoring against provided list.
-   * 2. GENERATION MODE (Default): Pure creative career counseling with NO restriction to a list.
-   */
-  const userProvidedCustomCatalog = customCourses && customCourses.length > 0;
-  let systemInstruction = "";
-  let prompt = "";
-  let temperature = 0.5;
-  let catalogString = "";
-
-  // === MODE 1: STRICT MATCHING (User provided specific preferences) ===
-  if (userProvidedCustomCatalog) {
-    catalogString = catalog.map(c =>
-      `ID: ${c.id} | Name: "${c.name}" | Category: ${c.category} | Tags: [${c.tags?.join(', ')}] | Description: ${c.description}`
-    ).join("\n");
-
-    systemInstruction = `
-      You are Pathfinder AI, an advanced algorithmic career matching engine.
-      Your task is to convert unstructured user text into structured data and perform a STRICT MATCH against the provided course database.
-
-      ### 🧠 ALGORITHM:
-      1.  **Extract Profile**: Analyze Q1-Q5 to build a user keyword profile.
-      2.  **Scoring Engine**: 
-          - Iterate through the provided "COURSE DATASET".
-          - Score each course (0-100) based on tag overlap, category fit, and semantic relevance.
-          - CRITICAL: You MUST use the *exact* \`Name\` string from the provided database.
-      3.  **Explain**: Generate a reason for the match based on the user's specific answers.
-      
-      ### OUTPUT:
-      - Valid JSON only.
-    `;
-
-    prompt = `
-      TASK: Select the top 3 matches from the provided dataset for this user.
-
-      === 1. STUDENT PROFILE ===
-      LEVEL: ${isUG ? "Post-Graduation" : "Post-Class 12"}
-      ANSWERS:
-      ${formattedAnswers}
-
-      === 2. STRICT COURSE DATASET ===
-      ${catalogString}
-
-      === 3. EXECUTION ===
-      Score and Select. Return JSON.
-    `;
-
-    temperature = 0.2; // Low temp for strict matching
-  }
-
-  // === MODE 2: OPEN GENERATION (Dynamic / Default) ===
-  else {
-    // No catalog string used here to prevent anchoring bias.
-    systemInstruction = `
-      You are Pathfinder AI, a world-class career counselor and academic strategist.
-      Your task is to analyze a student's psychometric profile and recommend the 3 BEST REAL-WORLD degrees or courses for them.
-
-      ### 🧠 ALGORITHM:
-      1.  **Deep Profile Analysis**: 
-          - Look for "hidden" traits in their answers (e.g., mention of "Lego" + "Nature" -> Biomimicry Architecture).
-          - Do NOT just look for surface-level keywords. Synthesize a "Professional Archetype".
-      2.  **Global Search**: 
-          - Ignore any pre-conceived lists. Search your entire knowledge base for degrees, certifications, or career paths that currently exist in universities worldwide.
-          - Prioritize *emerging* fields (AI Ethics, Sustainable Fashion, Space Law) if the user's profile suggests it.
-          - Ensure the recommendations are distinct from each other.
-      3.  **Explain**: 
-          - Sell the recommendation. Why will THIS specific person thrive there?
-
-      ### OUTPUT:
-      - Valid JSON only.
-      - Ensure \`relevanceScore\` is high (85+) for strong fits.
-    `;
-
-    prompt = `
-      TASK: Recommend the 3 best ${isUG ? "Master's/Postgrad degrees" : "Undergraduate degrees"} for this specific student.
-
-      === STUDENT PROFILE ===
-      LEVEL: ${isUG ? "Post-Graduation" : "Post-Class 12"}
-      ANSWERS:
-      ${formattedAnswers}
-
-      === EXECUTION ===
-      Think creatively. Suggest actionable, specific degrees. Return JSON.
-    `;
-
-    temperature = 0.9; // High temp for creativity
-  }
-
-  const attemptAnalysis = async (retryCount = 0): Promise<AnalysisResult> => {
-    try {
-      console.log(`🚀 STARTING AI ANALYSIS (Attempt ${retryCount + 1})`);
-      console.log("API KEY PRESENT:", !!processEnvApiKey);
-      console.log("Prompt Mode:", userProvidedCustomCatalog ? "Custom Catalog" : "Open Dynamic");
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-          systemInstruction: systemInstruction,
-          responseMimeType: "application/json",
-          responseSchema: RESPONSE_SCHEMA,
-          temperature: temperature,
-        },
-      });
-
-      const text = response.text;
-      console.log("✅ RAW AI RESPONSE:", text);
-
-      if (!text) throw new Error("No response text received from Gemini API.");
-
-      const cleanText = text.replace(/```json\n?|\n?```/g, '').trim();
-      return JSON.parse(cleanText) as AnalysisResult;
-
-    } catch (error: any) {
-      console.error(`Attempt ${retryCount + 1} failed:`, error);
-
-      const isQuotaError = error.message?.includes("429") || error.message?.includes("RESOURCE_EXHAUSTED");
-
-      // Retry up to 2 times for quota errors (wait 4000ms, then 8000ms)
-      if (isQuotaError && retryCount < 2) {
-        const delay = 4000 * Math.pow(2, retryCount);
-        console.warn(`⚠️ Quota hit. Retrying in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return attemptAnalysis(retryCount + 1);
-      }
-
-      throw error;
-    }
-  };
-
   try {
-    return await attemptAnalysis();
+    console.log("🚀 STARTING HYBRID ENGINE ANALYSIS");
+
+    // 1. Extract User Vector + Keywords (Hybrid Logic)
+    // A. AI Extraction (Semantic)
+    const { weights: aiWeights, keywords } = await extractUserVector(formattedAnswers);
+
+    // B. Deterministic Extraction (Scientific)
+    const baseWeights = calculateBaseVector(answers);
+
+    // C. Merge (Weighted Average: 60% Explicit Choice, 40% AI Nuance)
+    const finalVector: Record<string, number> = {};
+    const allSkills = new Set([...Object.keys(aiWeights), ...Object.keys(baseWeights)]);
+
+    allSkills.forEach(skill => {
+      const aiVal = aiWeights[skill] || 0;
+      const baseVal = baseWeights[skill] || 0;
+      // Formula: Explicit choices get a 1.5x multiplier to ensure they dominate
+      finalVector[skill] = (aiVal * 0.4) + (baseVal * 1.5);
+    });
+
+    console.log("✅ User Vector Extracted:", Object.entries(finalVector).filter(([, v]) => v > 0.5).map(([k, v]) => `${k}:${v.toFixed(2)} `).join(", "));
+
+    // 2. Scout & Score specific Catalog (Client-Side)
+    const scoredCourses = scoutCourses(finalVector, keywords, catalog);
+    console.log("✅ Top 5 Mathematical Matches:", scoredCourses.slice(0, 5).map(c => c.name).join(", "));
+
+    // 3. Final Report
+    console.log("...Step 3: Generating Narrative");
+    const finalResult = await generateFinalReport(scoredCourses, formattedAnswers, isUG) as any;
+    console.log("✅ Analysis Complete.");
+
+    return finalResult;
+
   } catch (error) {
-    console.error("Gemini Analysis Final Failure:", error);
+    console.error("Hybrid Engine Failed:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.warn("⚠️ USING MOCK DATA DUE TO API ERROR ⚠️");
     return getMockAnalysisResult(level, errorMessage);
   }
 };
@@ -288,14 +446,12 @@ export const analyzeCareerPath = async (
 const getMockAnalysisResult = (level: '12' | 'UG', errorMessage?: string): AnalysisResult => {
   const isUG = level === 'UG';
 
-  const title = errorMessage
-    ? `⚠️ API ERROR: ${errorMessage.substring(0, 50)}...`
-    : "⚠️ SIMULATION MODE (API FAILED) ⚠️";
+  const title = "⚠️ SIMULATION MODE (API FAILED)";
 
   return {
     archetype: {
       title: title,
-      description: `[DIAGNOSTIC]: READ THIS. The app failed to connect to Gemini. \nError Details: ${errorMessage || "Unknown Error"}. \n\nFalling back to simulation data.`,
+      description: `[DIAGNOSTIC]: READ THIS.The app failed to connect to Gemini.\nError Details: ${errorMessage || "Unknown Error"}.\n\nFalling back to simulation data.`,
       drivers: {
         academic: "Computer Science & Design",
         passion: "Building & Creating",
@@ -382,6 +538,7 @@ const getMockAnalysisResult = (level: '12' | 'UG', errorMessage?: string): Analy
         { name: "UX Researcher", percentage: 25 }
       ],
       commonInterests: ["Generative Art", "Startup Culture", "Sci-Fi Literature", "Hackathons"]
-    }
+    },
+    audioScript: "Hey, Future Innovator. It's clear you've got a massive drive to build and create. That's why Computer Science is such a perfect match—it gives you the structural logic you need to turn those big ideas into reality. You're not just looking for a degree; you're building a foundation to lead the tech world. Let's see what you can build."
   };
 };

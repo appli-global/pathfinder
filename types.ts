@@ -19,6 +19,7 @@ export interface Course {
   category: string;
   description: string;
   tags?: string[]; // New: Keywords for better matching
+  weights?: Record<string, number>; // New: Skill weights associated with the course
 }
 
 // The structure expected from the Gemini API response
@@ -64,6 +65,7 @@ export interface AnalysisResult {
     }[];
     commonInterests: string[];
   };
+  audioScript: string;
 }
 
 export type AnswerMap = Record<number, string>;
