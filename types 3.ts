@@ -8,11 +8,9 @@ export interface Question {
   id: number;
   text: string;
   subtext?: string;
-  inputType?: 'choice' | 'text' | 'contact_details' | 'numeric_score';
+  inputType?: 'choice' | 'text';
   options?: Option[];
   placeholder?: string;
-  paymentLink?: string;
-
 }
 
 export interface Course {
@@ -26,10 +24,6 @@ export interface Course {
 
 // The structure expected from the Gemini API response
 export interface AnalysisResult {
-  userData?: {
-    name: string;
-    contact: string;
-  };
   archetype: {
     title: string;
     description: string;
@@ -62,7 +56,6 @@ export interface AnalysisResult {
     focus: string;
     courseName: string;
     insight: string;
-    relevanceScore: number; // NEW: 0-100
   }[];
   communityStats: {
     headline: string;

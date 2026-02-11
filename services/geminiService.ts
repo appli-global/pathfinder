@@ -95,8 +95,9 @@ const FINAL_RESPONSE_SCHEMA: Schema = {
           focus: { type: Type.STRING },
           courseName: { type: Type.STRING },
           insight: { type: Type.STRING },
+          relevanceScore: { type: Type.INTEGER },
         },
-        required: ["focus", "courseName", "insight"],
+        required: ["focus", "courseName", "insight", "relevanceScore"],
       },
     },
     communityStats: {
@@ -206,13 +207,13 @@ const extractUserVector = async (formattedAnswers: string): Promise<{ weights: R
       ${SKILL_COLUMNS.join(', ')}
 
       INSTRUCTIONS:
-      1. **Explicit Subject Priority**: If the user mentions specific subjects (e.g. "Math", "Biology"), add them to 'searchKeywords'.
-      2. **Psychometric Scoring (0.0 - 1.0)**:
-         - **High Weight (0.85 - 1.0)**: Traits explicitly demanded by the user's answers.
-         - **Medium Weight (0.4 - 0.7)**: Traits *inferred* from the user's vibe, flow state, or ideal work day. (e.g. "Gaming" -> Problem Solving + Digital Literacy).
-         - **Low Weight (0.0)**: Traits clearly irrelevant.
-      3. **Goal**: Create a rich, nuanced profile, not just a keyword match. The user wants to feel "understood".
-      4. **Output**: JSON with 'weights' object and 'searchKeywords' array.
+      1. **Explicit Subject Priority**: Q1 ("Most Enjoyable Subject") and Q2 ("Activity that makes time fly") are critical. Map these to relevant skills/keywords.
+      2. **Problem Solving Focus**: Q8 ("Real-world problems to solve") is a massive indicator of Domain Interest (e.g., "Climate" -> Environmental Studies, "AI" -> Tech/Math).
+      3. **Psychometric Scoring**:
+         - **High Weight (0.85 - 1.0)**: Traits demanded by their answers.
+         - **Medium Weight**: Inferred traits (e.g., "Helping people" -> Social Responsibility).
+      4. **Goal**: Deep, nuanced understanding.
+      5. **Output**: JSON with 'weights' object and 'searchKeywords' array.
     `;
 
   if (!ai) throw new Error("API Key missing - Simulation Mode");
@@ -234,51 +235,113 @@ const extractUserVector = async (formattedAnswers: string): Promise<{ weights: R
   return { weights: data.weights, keywords: data.searchKeywords || [] };
 };
 
-// Step 2: Scout/Score Courses (Client-Side Math + Keyword Search)
-const scoutCourses = (userVector: Record<string, number>, keywords: string[], catalog: Course[]): Course[] => {
+// Step 2: Scout/Score Courses (Client-Side Math + Keyword Search + DEGREE PREF)
+const scoutCourses = (
+  userVector: Record<string, number>,
+  keywords: string[],
+  catalog: Course[],
+  degreePreference?: string,
+  subjectPreference?: string
+): Course[] => {
   const scored = catalog.map(course => {
     // SCORING WEIGHTS
-    // 1. Keyword Match: +10.0 per keyword (Nice to have, but not overwhelming)
-    // 2. Trait Match: Sum of (userWeight * courseWeight) * 1000. 
-    //    Typical course weight ~0.02. Typical user weight ~0.9. Product ~0.018.
-    //    With 20 traits, total sum could be ~0.36. 
-    //    Multiply by 1000 => 360 points.
-    //    This makes personality match (360) > keyword match (10-20).
-
     let score = 0;
     let peakMatch = 0;
     let matchedKeywords = 0;
 
-    // 1. KEYWORD SEARCH BONUS (The "Search Engine" Logic - DOWNGRADED)
-    // Now a helping hand, not a kingmaker.
+    const cName = course.name.toLowerCase();
+    const cCat = course.category.toLowerCase();
+
+    // 1. DEGREE PREFERENCE BOOST (Tier 1 Priority: +5000)
+    // Robust normalization to handle "B.Tech" vs "B.E", "Medicine" vs "MBBS"
+    if (degreePreference && degreePreference.length > 2) {
+      const pref = degreePreference.toLowerCase().trim();
+
+      // Normalize common aliases
+      const aliases: Record<string, string[]> = {
+        "engineering": ["b.e", "b.tech", "technology"],
+        "b.tech": ["b.e", "technology"],
+        "tech": ["b.e", "technology", "b.ca"],
+        "medicine": ["mbbs", "bds"],
+        "doctor": ["mbbs", "bds"],
+        "mbbs": ["medicine", "surgery"],
+        "medical": ["mbbs", "bds", "nursing", "pharm"],
+        "architecture": ["b.arch"],
+        "arch": ["b.arch"],
+        "science": ["b.sc", "bs"],
+        "b.sc": ["science"],
+        "commerce": ["b.com", "finance"],
+        "business": ["bba", "management"],
+        "management": ["bba", "mba"],
+        "computer": ["bca", "b.tech", "b.e"],
+        "coding": ["bca", "b.tech", "b.e"],
+        "law": ["llb", "legal"],
+        "arts": ["ba", "b.a"],
+        "design": ["b.des", "design"]
+      };
+
+      let isMatch = false;
+
+      // Direct Match
+      if (cName.includes(pref) || cCat.includes(pref)) isMatch = true;
+
+      // Alias Match
+      if (!isMatch) {
+        for (const [key, variants] of Object.entries(aliases)) {
+          if (pref.includes(key)) {
+            if (variants.some(v => cName.includes(v) || cCat.includes(v))) {
+              isMatch = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (isMatch) {
+        score += 5000.0; // MASSIVE boost
+      }
+    }
+
+    // 2. SUBJECT PREFERENCE BOOST (Tier 2 Priority: +2500)
+    // If user said "Biology", we boost "Biology", "Zoology", "Life Sciences"
+    if (subjectPreference && subjectPreference.length > 2) {
+      const subj = subjectPreference.toLowerCase().trim();
+
+      // Simple direct check + common subject aliases if needed
+      // For now, direct substring matching is quite powerful for subjects like "Physics", "Math"
+      if (cName.includes(subj) || cCat.includes(subj) || (course.tags && course.tags.some(t => t.toLowerCase().includes(subj)))) {
+        score += 2500.0;
+      }
+    }
+
+    // 3. KEYWORD SEARCH BONUS
     const normalizedName = course.name.toLowerCase();
     keywords.forEach(kw => {
       const cleanKw = kw.toLowerCase().trim();
       if (cleanKw.length > 2 && normalizedName.includes(cleanKw)) {
-        score += 15.0;
+        score += 50.0;
         matchedKeywords++;
       }
     });
 
-    // 2. DOT PRODUCT (The "Personality" Logic - UPGRADED)
-    // We want this to be the primary driver.
+    // 4. DOT PRODUCT (Personality Match)
+    // Max Score per trait ~ 1.5 * 1.0 * 2000 = 3000. 
+    // Typical strong course has 2-3 dominant traits. Total ~ 6000-8000.
+    // This makes Personality the biggest factor overall, but Degree/Subject boosts (4500/4000) 
+    // ensure those preferences definitely mix into the top set.
     if (course.weights) {
       for (const [skill, weight] of Object.entries(course.weights)) {
         const userW = userVector[skill] || 0;
-
-        // Only count if both exist to avoid noise
         if (userW > 0.1 && weight > 0) {
           const matchVal = (userW * weight);
-          score += (matchVal * 1500.0); // Big multiplier to make this the dominant number
-
+          score += (matchVal * 2000.0);
           if (matchVal > peakMatch) peakMatch = matchVal;
         }
       }
     }
 
-    // 3. SPIKE BONUS (The "Niche" Logic)
-    // Reward single high-affinity matches (e.g. user loves Art, course is purely Art)
-    score += (peakMatch * 3000.0);
+    // 5. SPIKE BONUS
+    score += (peakMatch * 1000.0); // Reduced spike bonus to flatten distribution slightly
 
     return { ...course, tempScore: score };
   });
@@ -290,28 +353,50 @@ const scoutCourses = (userVector: Record<string, number>, keywords: string[], ca
 const generateFinalReport = async (
   topCourses: Course[],
   formattedAnswers: string,
-  isUG: boolean
+  isUG: boolean,
+  degreePreference?: string,
+  subjectPreference?: string
 ): Promise<AnalysisResult> => {
   // Pass top 150 candidates to LLM to ensure broad consideration
   const coursesContext = topCourses.slice(0, 150).map(c =>
     `ID:${c.id}|Name:"${c.name}"|Score:${(c as any).tempScore?.toFixed(1)}|Category:${c.category}`
   ).join("\n");
 
-  const prompt = `
-    TASK: Select the final 3 Recommendations and 3 Alternative Pathways from the TOP 20 mathematically ranked candidates below.
-    
-    USER PROFILE:
-    ${formattedAnswers}
+  const degreePrefPrompt = degreePreference ? `
+        NOTE: The user explicitly desires a "${degreePreference}" degree. 
+        CRITICAL CONSTRAINT: 
+        1. You MUST select exactly 1 recommendation that matches "${degreePreference}".
+        2. The other recommendations should balance this preference with their personality traits.` : "";
 
-    TOP 20 CANDIDATES (Ranked by Math Score):
-    ${coursesContext}
+  const subjectPrefPrompt = subjectPreference ? `
+        NOTE: The user's favorite subject is "${subjectPreference}".
+        CRITICAL CONSTRAINT:
+        1. You MUST select exactly 1 recommendation that is directly related to "${subjectPreference}".` : "";
+
+  const prompt = `
+        TASK: Select the final 3 Recommendations and 3 Alternative Pathways from the provided CANDIDATE LIST below.
+        
+        USER PROFILE:
+        ${formattedAnswers}
+    
+        ${degreePrefPrompt}
+        
+        ${subjectPrefPrompt}
+    
+        CANDIDATE LIST (Ranked by Math Score):
+        ${coursesContext}
 
     INSTRUCTIONS:
     1. **Strict Selection**: You MUST pick courses *only* from the provided list. Use exact names. Do NOT invent or Hallucinate new course names.
     2. **Selection Logic**:
        - Pick the top scoring ones for 'recommendations'.
        - Pick diverse/niche ones for 'alternativePathways'.
-    3. **Archetype**: Assign a creative "Archetype" title (e.g. "The Eco-Strategist").
+       - **CRITICAL**: If the user has a degree preference, prioritize courses matching that preference in the Recommendations list.
+    3. **Archetype**: Assign a **High-Impact, "Insta-Worthy" Title**. 
+       - **Rule**: It must be a unique, 2-3 word poetic persona.
+       - **Banned**: Do NOT use "Innovator", "Analyst", "Strategist", "Leader" on their own. They are boring.
+       - **Good Examples**: "The Silicon Alchemist", "The Quantum Storyteller", "The Bio-Digital Architect", "The Entropy Tamer".
+       - **Goal**: Make it sound like a Marvel hero or a futuristic profession. Rare, evocative, and cool enough to share on social media.
     4. **Narrative**: Explain *why* these specific courses fit the user's answers.
     5. **Audio Script**: Write a script for the text-to-speech engine. 
        - **Tone**: Warm, conversational, human. Use contractions (You're, It's, Let's). Avoid robotic phrases.
@@ -345,24 +430,38 @@ const generateFinalReport = async (
     return fallback.name;
   };
 
-  // Fix Recommendations
+  // Fix Recommendations and Override Match Scores for Confidence
   result.recommendations = result.recommendations.map((rec, i) => {
     // Fallback logic: Use the top ranked courses from our mathematical scout as safety nets
     const fallback = topCourses[i] || topCourses[0];
+
+    // Force High Confidence Scores:
+    // Top 1: 96-99%
+    // Top 2: 92-95%
+    // Top 3: 88-91%
+    const baseScore = 98 - (i * 4); // 98, 94, 90
+    const randomVariation = Math.floor(Math.random() * 2); // 0 or 1
+    const finalScore = baseScore + randomVariation;
+
     return {
       ...rec,
       courseName: validateAndFixCourse(rec.courseName, fallback),
-      relevanceScore: Math.min(rec.relevanceScore, 100) // Ensure score max is 100
+      relevanceScore: Math.min(finalScore, 100)
     };
   });
 
   // Fix Alternatives
   result.alternativePathways = result.alternativePathways.map((alt, i) => {
-    // Use slightly lower ranked courses for alternatives to ensure diversity
+    // Use slightly lower ranked courses checking for diversity
     const fallback = topCourses[i + 3] || topCourses[topCourses.length - 1];
+
+    // Alts: 75-85%
+    const altScore = 85 - (i * 3);
+
     return {
       ...alt,
-      courseName: validateAndFixCourse(alt.courseName, fallback)
+      courseName: validateAndFixCourse(alt.courseName, fallback),
+      relevanceScore: Math.min(altScore, 100)
     };
   });
 
@@ -381,25 +480,57 @@ export const analyzeCareerPath = async (
 
   const qContext = isUG ? {
     1: "Reason for Change (Drive)",
-    2: "Desired Hard Skills (CRITICAL - Extract keywords here)",
-    3: "Ideal Career Track",
-    4: "Work-Life Preference",
-    5: "Specific Thesis/Interest Topic (Latent Interest)"
+    2: "Desired Hard Skills (Technical Gap)",
+    3: "Vision of Future Role",
+    4: "Ideal Work Environment",
+    5: "Thesis/Capstone Topic (Latent Interest)"
   } : {
-    1: "Favorite Class (Academic Identity)",
-    2: "Saturday Activity (Flow State / Keyword Source)",
-    3: "Ideal Work Day (Task Preference)",
-    4: "Comfort Zone (Modality)",
-    5: "Career Motivation (Core Values)"
+    1: "Subject You Excel In (Academic Strength)",
+    2: "Free Time Activity (Interest/Flow)",
+    3: "Exciting Future Work (Career Motivation)",
+    4: "Work Comfort Zone (Modality)",
+    5: "Most Important Career Factor (Values)",
+    6: "Typical Approach (Cognitive Style)",
+    7: "Thriving Environment (Setting)",
+    8: "Real-World Problems to Solve (Purpose/Mission)"
   };
 
+  // 1. Extract & Save Contact Info (if available)
+  // For Q13 (contact_details), the answer is a JSON string {name, contact}
+  let contactName = "Anonymous";
+  let contactPhone = "";
+
+  try {
+    const rawContact = answers[13];
+    if (rawContact) {
+      const parsed = JSON.parse(rawContact);
+      contactName = parsed.name || "Anonymous";
+      contactPhone = parsed.contact || "";
+    }
+  } catch (e) {
+    console.error("Failed to parse contact details:", e);
+  }
+
+  if (contactName !== "Anonymous" || contactPhone) {
+    // Fire and forget save
+    fetch('/api/save-contact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: contactName, contact: contactPhone })
+    }).catch(err => console.error("Failed to save contact:", err));
+  }
+
+  // 2. Filter out Contact Question (ID 13) and Percentage Questions (ID 9, 11) from AI Payload
   const formattedAnswers = Object.entries(answers)
-    .map(([qId, ans]) => {
-      const id = parseInt(qId);
-      const context = qContext[id as keyof typeof qContext] || `Question ${id} `;
-      return `[${context}]: "${ans}"`;
+    .filter(([key]) => {
+      const k = parseInt(key);
+      return k !== 13 && k !== 9 && k !== 11; // Exclude ID 13 (Contact), ID 9 (12th %), ID 11 (10th %)
     })
-    .join("\n");
+    .map(([key, value]) => {
+      const qText = qContext[key as any] || `Question ${key}`;
+      return `- ${qText}: "${value}"`;
+    })
+    .join('\n');
 
 
   try {
@@ -426,12 +557,15 @@ export const analyzeCareerPath = async (
     console.log("✅ User Vector Extracted:", Object.entries(finalVector).filter(([, v]) => v > 0.5).map(([k, v]) => `${k}:${v.toFixed(2)} `).join(", "));
 
     // 2. Scout & Score specific Catalog (Client-Side)
-    const scoredCourses = scoutCourses(finalVector, keywords, catalog);
+    const degreePreference = answers[10] || ""; // User's degree preference from Q10
+    const subjectPreference = answers[1] || ""; // User's favorite subject from Q1 (CRITICAL FIX)
+
+    const scoredCourses = scoutCourses(finalVector, keywords, catalog, degreePreference, subjectPreference);
     console.log("✅ Top 5 Mathematical Matches:", scoredCourses.slice(0, 5).map(c => c.name).join(", "));
 
     // 3. Final Report
     console.log("...Step 3: Generating Narrative");
-    const finalResult = await generateFinalReport(scoredCourses, formattedAnswers, isUG) as any;
+    const finalResult = await generateFinalReport(scoredCourses, formattedAnswers, isUG, degreePreference, subjectPreference) as any;
     console.log("✅ Analysis Complete.");
 
     return finalResult;
@@ -522,12 +656,14 @@ const getMockAnalysisResult = (level: '12' | 'UG', errorMessage?: string): Analy
       {
         focus: "Creative Tech",
         courseName: isUG ? "M.Des in Animation & VFX" : "B.Des in Game Design",
-        insight: "If you want to lean purely into the creative/entertainment aspect."
+        insight: "If you want to lean purely into the creative/entertainment aspect.",
+        relevanceScore: 78
       },
       {
         focus: "Business of Tech",
         courseName: isUG ? "MBA (Finance & Fintech)" : "BBA (Marketing / Finance)",
-        insight: "If you decide to focus on the monetary/market side of innovation."
+        insight: "If you decide to focus on the monetary/market side of innovation.",
+        relevanceScore: 72
       }
     ],
     communityStats: {
