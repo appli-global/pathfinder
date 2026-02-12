@@ -21,21 +21,21 @@ export const SKILL_COLUMNS = [
 export const QUESTIONS_12TH: Question[] = [
   {
     id: 1,
-    text: "Which subject do you excel in?",
+    text: "Which subject is totally your vibe?",
     subtext: "(e.g., Math, Biology, English, History, Art, Code, etc.)",
     inputType: 'text',
     options: [] // Open text
   },
   {
     id: 2,
-    text: "During your free time, what do you enjoy doing?",
+    text: "It's Saturday, no homework. What's the one thing you're doing that makes you lose track of time?",
     subtext: "(e.g., Gaming, Coding, Drawing, Reading/Writing)",
     inputType: 'text',
     options: []
   },
   {
     id: 3,
-    text: "In your future career, what kind of work would excite you?",
+    text: "Which of these sounds like a better day at work?",
     inputType: 'choice',
     options: [
       { label: "Solving a complex data puzzle.", value: "Data Puzzle" },
@@ -46,7 +46,7 @@ export const QUESTIONS_12TH: Question[] = [
   },
   {
     id: 4,
-    text: "What are you most comfortable working with...",
+    text: "You're most comfortable working with...",
     inputType: 'choice',
     options: [
       { label: "Numbers and data.", value: "Numbers & Data" },
@@ -57,7 +57,7 @@ export const QUESTIONS_12TH: Question[] = [
   },
   {
     id: 5,
-    text: "What is most important for the future career?",
+    text: "Ultimately, what's most important in your future career?",
     inputType: 'choice',
     options: [
       { label: "Building/creating something new and innovative.", value: "Innovation" },
@@ -65,104 +65,38 @@ export const QUESTIONS_12TH: Question[] = [
       { label: "Gaining deep knowledge and expertise.", value: "Expertise" },
       { label: "Achieving a position of leadership and influence.", value: "Leadership" }
     ]
-  },
-  {
-    id: 6,
-    text: "What would your typical approach be?",
-    inputType: 'choice',
-    options: [
-      { label: "Research and analyze all the data first.", value: "Analytical Approach" },
-      { label: "Trust your gut and experiment with solutions.", value: "Intuitive/Trial & Error" },
-      { label: "Talk it out with others to brainstorm.", value: "Collaborative/Social" },
-      { label: "Break it down into a step-by-step process.", value: "Structured/Procedural" }
-    ]
-  },
-  {
-    id: 7,
-    text: "What kind of environment would you thrive in?",
-    inputType: 'choice',
-    options: [
-      { label: "In a high-tech lab or research facility.", value: "Tech Lab/Research" },
-      { label: "In a quiet, personal study or library.", value: "Quiet Study" },
-      { label: "In a busy, creative studio or newsroom.", value: "Creative Studio" },
-      { label: "Outdoors or traveling to new places.", value: "Fieldwork/Outdoors" }
-    ]
-  },
-  {
-    id: 8,
-    text: "What kind of real-world problems seem most exciting to solve?",
-    subtext: "(e.g. Climate solutions, Medical breakthroughs, AI/Tech innovation, Social justice)",
-    inputType: 'text',
-    options: []
-  },
-  {
-    id: 9,
-    text: "What is your 12th percentage (or expected)?",
-    subtext: "(e.g. 85%, 92%)",
-    inputType: 'numeric_score',
-    options: []
-  },
-  {
-    id: 10,
-    text: "Are there any specific degrees already in mind?",
-    subtext: "(e.g. B.Tech CS, BBA, MBBS, or 'Not sure yet')",
-    inputType: 'text',
-    options: []
-  },
-  {
-    id: 11,
-    text: "What is your 10th percentage?",
-    subtext: "(e.g. 95%, 88%)",
-    inputType: 'numeric_score',
-    options: []
-  },
-  {
-    id: 13,
-    text: "Final Step: Your Details",
-    subtext: "To generate your personalized career report.",
-    inputType: 'contact_details',
-    paymentLink: 'https://pages.razorpay.com/pl_SCPq1xHMxbzY1b/view',
-    options: []
   }
 ];
 
 export const QUESTIONS_UG: Question[] = [
   {
     id: 1,
-    text: "Reason for looking for a change/next step right now? (e.g. money, passion, or pivot?)",
+    text: "Why are you looking for a change right now? (Be honest - is it for money, passion, or pivot?)",
     inputType: 'text',
     options: []
   },
   {
     id: 2,
-    text: "Which hard skills are next on the list to master? (What specific technical or soft skills?)",
+    text: "Which hard skills do you want to master next? (What specific technical or soft skills are you aiming for?)",
     inputType: 'text',
     options: []
   },
   {
     id: 3,
-    text: "Looking 3-5 years ahead, what is the envisioned job title or role?",
+    text: "Looking 3-5 years ahead, what specific job title or role do you see yourself in?",
     inputType: 'text',
     options: []
   },
   {
     id: 4,
-    text: "Describe the ideal work environment (e.g. fast-paced startup, structured corporate, remote research, etc).",
+    text: "Describe your ideal work environment (e.g. fast-paced startup, structured corporate, remote research, etc).",
     inputType: 'text',
     options: []
   },
   {
     id: 5,
-    text: "If writing a thesis or leading a capstone project today, what specific topic would it cover?",
+    text: "If you had to write a thesis or lead a capstone project today, what specific topic would it cover?",
     inputType: 'text',
-    options: []
-  },
-  {
-    id: 13,
-    text: "Final Step: Your Details",
-    subtext: "To generate your personalized career report.",
-    inputType: 'contact_details',
-    paymentLink: 'https://pages.razorpay.com/pl_SCPq1xHMxbzY1b/view',
     options: []
   }
 ];
