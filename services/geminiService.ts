@@ -2,14 +2,25 @@ import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { COURSE_CATALOG, MASTERS_CATALOG, SKILL_COLUMNS, VALID_COURSE_NAMES } from "../constants";
 import { AnalysisResult, AnswerMap, Course } from "../types";
 
-const processEnvApiKey = process.env.API_KEY;
+// Robust API Key loading for both Vite (Client) and standard Node (Server/Test) contexts
+const getApiKey = () => {
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
+    return import.meta.env.VITE_GEMINI_API_KEY;
+  }
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.VITE_GEMINI_API_KEY;
+  }
+  return null;
+}
 
-if (!processEnvApiKey) {
+const apiKey = getApiKey();
+
+if (!apiKey) {
   console.warn("⚠️ API_KEY is missing. The app will run in SIMULATION MODE.");
 }
 
 // Safely initialize AI only if key exists, otherwise null
-const ai = processEnvApiKey ? new GoogleGenAI({ apiKey: processEnvApiKey }) : null;
+const ai = apiKey ? new GoogleGenAI({ apiKey: apiKey }) : null;
 
 // --- SCHEMAS ---
 
@@ -37,11 +48,46 @@ const FINAL_RESPONSE_SCHEMA: Schema = {
         drivers: {
           type: Type.OBJECT,
           properties: {
-            academic: { type: Type.STRING },
-            passion: { type: Type.STRING },
-            cognitive: { type: Type.STRING },
-            domain: { type: Type.STRING },
-            motivation: { type: Type.STRING },
+            academic: {
+              type: Type.OBJECT,
+              properties: {
+                label: { type: Type.STRING, description: "Short label (e.g., 'Mathematical Thinking')" },
+                explanation: { type: Type.STRING, description: "1-2 sentence explanation connecting user's answers to this driver" }
+              },
+              required: ["label", "explanation"]
+            },
+            passion: {
+              type: Type.OBJECT,
+              properties: {
+                label: { type: Type.STRING, description: "Short label describing their passion" },
+                explanation: { type: Type.STRING, description: "1-2 sentence explanation" }
+              },
+              required: ["label", "explanation"]
+            },
+            cognitive: {
+              type: Type.OBJECT,
+              properties: {
+                label: { type: Type.STRING, description: "Short label describing cognitive style" },
+                explanation: { type: Type.STRING, description: "1-2 sentence explanation" }
+              },
+              required: ["label", "explanation"]
+            },
+            domain: {
+              type: Type.OBJECT,
+              properties: {
+                label: { type: Type.STRING, description: "Short label describing preferred domain" },
+                explanation: { type: Type.STRING, description: "1-2 sentence explanation" }
+              },
+              required: ["label", "explanation"]
+            },
+            motivation: {
+              type: Type.OBJECT,
+              properties: {
+                label: { type: Type.STRING, description: "Short label describing core motivation" },
+                explanation: { type: Type.STRING, description: "1-2 sentence explanation" }
+              },
+              required: ["label", "explanation"]
+            },
           },
           required: ["academic", "passion", "cognitive", "domain", "motivation"],
         },
@@ -172,16 +218,16 @@ const calculateBaseVector = (answers: AnswerMap): Record<string, number> => {
 // Helper: Robustly extract text from Gemini response
 const extractTextFromResponse = (response: any): string => {
   try {
-    // 1. Try standard helper method
-    if (typeof response.text === 'function') {
-      return response.text();
-    }
-    // 2. Try candidates array (Google GenAI SDK standard structure)
+    // 1. Try candidates array (Google GenAI SDK standard structure) — Priority
     if (response.candidates && response.candidates.length > 0) {
       const candidate = response.candidates[0];
       if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
         return candidate.content.parts[0].text || "{}";
       }
+    }
+    // 2. Try standard helper method (if it exists)
+    if (typeof response.text === 'function') {
+      return response.text();
     }
     // 3. Fallback to raw text property if it exists
     if (typeof response.text === 'string') {
@@ -252,55 +298,9 @@ const scoutCourses = (
     const cName = course.name.toLowerCase();
     const cCat = course.category.toLowerCase();
 
-    // 1. DEGREE PREFERENCE BOOST (Tier 1 Priority: +5000)
-    // Robust normalization to handle "B.Tech" vs "B.E", "Medicine" vs "MBBS"
-    if (degreePreference && degreePreference.length > 2) {
-      const pref = degreePreference.toLowerCase().trim();
-
-      // Normalize common aliases
-      const aliases: Record<string, string[]> = {
-        "engineering": ["b.e", "b.tech", "technology"],
-        "b.tech": ["b.e", "technology"],
-        "tech": ["b.e", "technology", "b.ca"],
-        "medicine": ["mbbs", "bds"],
-        "doctor": ["mbbs", "bds"],
-        "mbbs": ["medicine", "surgery"],
-        "medical": ["mbbs", "bds", "nursing", "pharm"],
-        "architecture": ["b.arch"],
-        "arch": ["b.arch"],
-        "science": ["b.sc", "bs"],
-        "b.sc": ["science"],
-        "commerce": ["b.com", "finance"],
-        "business": ["bba", "management"],
-        "management": ["bba", "mba"],
-        "computer": ["bca", "b.tech", "b.e"],
-        "coding": ["bca", "b.tech", "b.e"],
-        "law": ["llb", "legal"],
-        "arts": ["ba", "b.a"],
-        "design": ["b.des", "design"]
-      };
-
-      let isMatch = false;
-
-      // Direct Match
-      if (cName.includes(pref) || cCat.includes(pref)) isMatch = true;
-
-      // Alias Match
-      if (!isMatch) {
-        for (const [key, variants] of Object.entries(aliases)) {
-          if (pref.includes(key)) {
-            if (variants.some(v => cName.includes(v) || cCat.includes(v))) {
-              isMatch = true;
-              break;
-            }
-          }
-        }
-      }
-
-      if (isMatch) {
-        score += 5000.0; // MASSIVE boost
-      }
-    }
+    // 1. DEGREE PREFERENCE BOOST - DISABLED
+    // NOTE: Question 10 ("Are there any specific degrees already in mind?") is NOT used for recommendations
+    // This ensures recommendations are based purely on personality, skills, and interests
 
     // 2. SUBJECT PREFERENCE BOOST (Tier 2 Priority: +2500)
     // If user said "Biology", we boost "Biology", "Zoology", "Life Sciences"
@@ -362,11 +362,8 @@ const generateFinalReport = async (
     `ID:${c.id}|Name:"${c.name}"|Score:${(c as any).tempScore?.toFixed(1)}|Category:${c.category}`
   ).join("\n");
 
-  const degreePrefPrompt = degreePreference ? `
-        NOTE: The user explicitly desires a "${degreePreference}" degree. 
-        CRITICAL CONSTRAINT: 
-        1. You MUST select exactly 1 recommendation that matches "${degreePreference}".
-        2. The other recommendations should balance this preference with their personality traits.` : "";
+  // NOTE: Degree preference is NOT used for recommendations
+  const degreePrefPrompt = "";
 
   const subjectPrefPrompt = subjectPreference ? `
         NOTE: The user's favorite subject is "${subjectPreference}".
@@ -391,14 +388,20 @@ const generateFinalReport = async (
     2. **Selection Logic**:
        - Pick the top scoring ones for 'recommendations'.
        - Pick diverse/niche ones for 'alternativePathways'.
-       - **CRITICAL**: If the user has a degree preference, prioritize courses matching that preference in the Recommendations list.
+       - Select courses that best match the user's personality, skills, and interests.
     3. **Archetype**: Assign a **High-Impact, "Insta-Worthy" Title**. 
        - **Rule**: It must be a unique, 2-3 word poetic persona.
        - **Banned**: Do NOT use "Innovator", "Analyst", "Strategist", "Leader" on their own. They are boring.
        - **Good Examples**: "The Silicon Alchemist", "The Quantum Storyteller", "The Bio-Digital Architect", "The Entropy Tamer".
        - **Goal**: Make it sound like a Marvel hero or a futuristic profession. Rare, evocative, and cool enough to share on social media.
-    4. **Narrative**: Explain *why* these specific courses fit the user's answers.
-    5. **Audio Script**: Write a script for the text-to-speech engine. 
+    4. **Drivers**: For each of the 5 drivers (academic, passion, cognitive, domain, motivation), provide:
+       - **Label**: A concise 2-4 word phrase (e.g., "Mathematical Thinking", "Strategic Problem-Solving")
+       - **Explanation**: A 1-2 sentence explanation that DIRECTLY references the user's specific quiz answers
+       - **Example**: 
+         * Label: "Mathematical Thinking"
+         * Explanation: "You excel in mathematical thinking, which forms a strong base for quantitative analysis."
+    5. **Narrative**: Explain *why* these specific courses fit the user's answers.
+    6. **Audio Script**: Write a script for the text-to-speech engine. 
        - **Tone**: Warm, conversational, human. Use contractions (You're, It's, Let's). Avoid robotic phrases.
        - **Structure**:
          1. **Hook**: Direct, personal opening.
@@ -433,7 +436,7 @@ const generateFinalReport = async (
   // Fix Recommendations and Override Match Scores for Confidence
   result.recommendations = result.recommendations.map((rec, i) => {
     // Fallback logic: Use the top ranked courses from our mathematical scout as safety nets
-    const fallback = topCourses[i] || topCourses[0];
+    const fallback = topCourses[i] || topCourses[0] || { name: rec.courseName, id: 'unknown', category: 'General' } as Course;
 
     // Force High Confidence Scores:
     // Top 1: 96-99%
@@ -468,6 +471,131 @@ const generateFinalReport = async (
   return result;
 };
 
+// Step 4: Analyze Stated Degree Preference
+const analyzeDegreePreference = (
+  degreePreference: string,
+  userVector: Record<string, number>,
+  catalog: Course[]
+): { statedPreference: string; matchedCourses: any[]; overallInsight: string } | null => {
+  // Enhanced filtering for non-specific answers
+  const negativeTerms = ['not sure', 'no', 'none', 'unsure', 'undecided', 'idk', "don't know", 'any'];
+  if (!degreePreference || degreePreference.length < 3 || negativeTerms.some(term => degreePreference.toLowerCase().includes(term))) {
+    return null; // User didn't provide a specific preference
+  }
+
+  const pref = degreePreference.toLowerCase().trim();
+
+  // Normalize common aliases (same as before)
+  const aliases: Record<string, string[]> = {
+    "engineering": ["b.e", "b.tech", "technology"],
+    "b.tech": ["b.e", "technology"],
+    "tech": ["b.e", "technology", "b.ca"],
+    "medicine": ["mbbs", "bds"],
+    "doctor": ["mbbs", "bds"],
+    "mbbs": ["medicine", "surgery"],
+    "medical": ["mbbs", "bds", "nursing", "pharm"],
+    "architecture": ["b.arch"],
+    "arch": ["b.arch"],
+    "science": ["b.sc", "bs"],
+    "b.sc": ["science"],
+    "commerce": ["b.com", "finance"],
+    "business": ["bba", "management"],
+    "management": ["bba", "mba"],
+    "computer": ["bca", "b.tech", "b.e"],
+    "coding": ["bca", "b.tech", "b.e"],
+    "law": ["llb", "legal"],
+    "arts": ["ba", "b.a"],
+    "design": ["b.des", "design"]
+  };
+
+  // Find matching courses
+  const matchingCourses = catalog.filter(course => {
+    const cName = course.name.toLowerCase();
+    const cCat = course.category.toLowerCase();
+
+    // Direct Match
+    if (cName.includes(pref) || cCat.includes(pref)) return true;
+
+    // Alias Match
+    for (const [key, variants] of Object.entries(aliases)) {
+      if (pref.includes(key)) {
+        if (variants.some(v => cName.includes(v) || cCat.includes(v))) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  });
+
+  if (matchingCourses.length === 0) {
+    return null; // No courses match the stated preference
+  }
+
+  // Calculate match percentages based on personality fit
+  const scoredMatches = matchingCourses.map(course => {
+    let score = 0;
+    let maxPossibleScore = 0;
+
+    if (course.weights) {
+      for (const [skill, weight] of Object.entries(course.weights)) {
+        const userW = userVector[skill] || 0;
+        if (weight > 0) {
+          score += (userW * weight);
+          maxPossibleScore += weight; // Assuming max user weight is 1.0
+        }
+      }
+    }
+
+    // Convert to percentage (0-100)
+    const matchPercentage = maxPossibleScore > 0
+      ? Math.min(Math.round((score / maxPossibleScore) * 100), 99)
+      : 75; // Default if no weights
+
+    return {
+      ...course,
+      matchPercentage
+    };
+  });
+
+  // Sort by match percentage and take top 3
+  const topMatches = scoredMatches
+    .sort((a, b) => b.matchPercentage - a.matchPercentage)
+    .slice(0, 3);
+
+  // Calculate average match
+  const avgMatch = Math.round(
+    topMatches.reduce((sum, c) => sum + c.matchPercentage, 0) / topMatches.length
+  );
+
+  // Generate overall insight
+  let overallInsight = "";
+  if (avgMatch >= 85) {
+    overallInsight = `Excellent alignment! Your stated preference for "${degreePreference}" matches very well with your personality profile. This is a strong choice that aligns with your natural strengths and interests.`;
+  } else if (avgMatch >= 70) {
+    overallInsight = `Good fit! Your interest in "${degreePreference}" aligns reasonably well with your profile. With focused effort, you can excel in this field.`;
+  } else if (avgMatch >= 55) {
+    overallInsight = `Moderate alignment. While "${degreePreference}" is achievable, you might want to explore our AI-recommended paths which show stronger alignment with your natural strengths.`;
+  } else {
+    overallInsight = `Lower alignment detected. "${degreePreference}" may require significant adaptation. We strongly recommend reviewing our AI-recommended paths which better match your personality and skills.`;
+  }
+
+  return {
+    statedPreference: degreePreference,
+    matchedCourses: topMatches.map(c => ({
+      degree: c.id.split('_')[0] || 'Degree',
+      courseName: c.name,
+      matchPercentage: c.matchPercentage,
+      matchInsight: c.matchPercentage >= 80
+        ? "Strong personality match - your natural strengths align well with this path"
+        : c.matchPercentage >= 65
+          ? "Moderate match - achievable with dedicated effort"
+          : "Lower match - may require developing new skill sets"
+    })),
+    overallInsight
+  };
+};
+
 
 // --- MAIN FUNCTION ---
 
@@ -492,7 +620,10 @@ export const analyzeCareerPath = async (
     5: "Most Important Career Factor (Values)",
     6: "Typical Approach (Cognitive Style)",
     7: "Thriving Environment (Setting)",
-    8: "Real-World Problems to Solve (Purpose/Mission)"
+    8: "Real-World Problems to Solve (Purpose/Mission)",
+    14: "Top 3 Subjects in 12th (Academic Strength)",
+    15: "Top 3 Subjects in 10th (Academic Foundation)",
+    10: "Specific Degree Preference (Stated Goal)"
   };
 
   // 1. Extract & Save Contact Info (if available)
@@ -535,6 +666,9 @@ export const analyzeCareerPath = async (
 
   try {
     console.log("🚀 STARTING HYBRID ENGINE ANALYSIS");
+    console.log("API Key present:", !!ai);
+    console.log("Catalog Size:", catalog.length);
+
 
     // 1. Extract User Vector + Keywords (Hybrid Logic)
     // A. AI Extraction (Semantic)
@@ -557,18 +691,30 @@ export const analyzeCareerPath = async (
     console.log("✅ User Vector Extracted:", Object.entries(finalVector).filter(([, v]) => v > 0.5).map(([k, v]) => `${k}:${v.toFixed(2)} `).join(", "));
 
     // 2. Scout & Score specific Catalog (Client-Side)
-    const degreePreference = answers[10] || ""; // User's degree preference from Q10
+    // NOTE: Degree preference (Q10) is NOT used for recommendations
     const subjectPreference = answers[1] || ""; // User's favorite subject from Q1 (CRITICAL FIX)
 
-    const scoredCourses = scoutCourses(finalVector, keywords, catalog, degreePreference, subjectPreference);
+    const scoredCourses = scoutCourses(finalVector, keywords, catalog, undefined, subjectPreference);
     console.log("✅ Top 5 Mathematical Matches:", scoredCourses.slice(0, 5).map(c => c.name).join(", "));
 
     // 3. Final Report
     console.log("...Step 3: Generating Narrative");
-    const finalResult = await generateFinalReport(scoredCourses, formattedAnswers, isUG, degreePreference, subjectPreference) as any;
+    const finalResult = await generateFinalReport(scoredCourses, formattedAnswers, isUG, undefined, subjectPreference) as any;
     console.log("✅ Analysis Complete.");
 
-    return finalResult;
+    // 4. Analyze Stated Degree Preference (if provided)
+    const degreePreference = answers[10] || "";
+    const degreeAnalysis = analyzeDegreePreference(degreePreference, finalVector, catalog);
+    console.log(degreeAnalysis ? "✅ Degree Preference Analysis Complete." : "ℹ️ No specific degree preference provided.");
+
+    return {
+      ...finalResult,
+      degreePreferenceAnalysis: degreeAnalysis,
+      userData: {
+        name: contactName,
+        contact: contactPhone
+      }
+    };
 
   } catch (error) {
     console.error("Hybrid Engine Failed:", error);
@@ -587,11 +733,26 @@ const getMockAnalysisResult = (level: '12' | 'UG', errorMessage?: string): Analy
       title: title,
       description: `[DIAGNOSTIC]: READ THIS.The app failed to connect to Gemini.\nError Details: ${errorMessage || "Unknown Error"}.\n\nFalling back to simulation data.`,
       drivers: {
-        academic: "Computer Science & Design",
-        passion: "Building & Creating",
-        cognitive: "Structural Logic",
-        domain: "Technology",
-        motivation: "Innovation"
+        academic: {
+          label: "Computer Science & Design",
+          explanation: "You excel in mathematical thinking and logical problem-solving, which forms a strong base for quantitative analysis and technical work."
+        },
+        passion: {
+          label: "Building & Creating",
+          explanation: "Your enjoyment of hands-on creation and problem-solving translates into a natural aptitude for strategic thinking and complex system design."
+        },
+        cognitive: {
+          label: "Structural Logic",
+          explanation: "You are inherently drawn to solving data puzzles and working with structured systems, indicating a strong analytical and quantitative mind."
+        },
+        domain: {
+          label: "Technology",
+          explanation: "Your preference for tech-driven environments highlights a desire to work at the forefront of technological innovation and digital transformation."
+        },
+        motivation: {
+          label: "Innovation",
+          explanation: "You are driven by innovation and an analytical approach, eager to develop novel solutions through rigorous examination and creative thinking."
+        }
       }
     },
     visionBoard: {
@@ -640,7 +801,7 @@ const getMockAnalysisResult = (level: '12' | 'UG', errorMessage?: string): Analy
       {
         degree: "B.Des",
         courseName: "B.Des in User Interface/User Experience (UI/UX)",
-        matchReason: "Blends your tech skills with your creative eye for human interaction.",
+        matchReason: "Perfect for ensuring your technical solutions are user-centric and beautiful.",
         dataInsight: "Keyword overlap: Design, Creativity, Technology",
         relevanceScore: 90
       },
@@ -656,16 +817,40 @@ const getMockAnalysisResult = (level: '12' | 'UG', errorMessage?: string): Analy
       {
         focus: "Creative Tech",
         courseName: isUG ? "M.Des in Animation & VFX" : "B.Des in Game Design",
-        insight: "If you want to lean purely into the creative/entertainment aspect.",
-        relevanceScore: 78
+        insight: "Combines your technical aptitude with visual creativity.",
+        relevanceScore: 80
       },
       {
-        focus: "Business of Tech",
-        courseName: isUG ? "MBA (Finance & Fintech)" : "BBA (Marketing / Finance)",
-        insight: "If you decide to focus on the monetary/market side of innovation.",
-        relevanceScore: 72
+        focus: "Management",
+        courseName: isUG ? "Masters in Engineering Management" : "BBA within Tech",
+        insight: "For leading technical teams rather than just coding.",
+        relevanceScore: 75
       }
     ],
+    degreePreferenceAnalysis: {
+      statedPreference: "Computer Science",
+      matchedCourses: [
+        {
+          degree: "B.Tech",
+          courseName: "B.E. Computer Science",
+          matchPercentage: 95,
+          matchInsight: "Strong personality match - aligns with your logical thinking."
+        },
+        {
+          degree: "B.Sc",
+          courseName: "B.Sc Computer Science",
+          matchPercentage: 90,
+          matchInsight: "Good theoretical fit for your academic profile."
+        },
+        {
+          degree: "BCA",
+          courseName: "Bachelor of Computer Applications",
+          matchPercentage: 85,
+          matchInsight: "Practical, skills-based alignment."
+        }
+      ],
+      overallInsight: "Excellent alignment! Your interest in Computer Science matches very well with your logical and analytical profile."
+    },
     communityStats: {
       headline: "People like you often found startups or lead product teams.",
       topCareers: [
@@ -675,6 +860,10 @@ const getMockAnalysisResult = (level: '12' | 'UG', errorMessage?: string): Analy
       ],
       commonInterests: ["Generative Art", "Startup Culture", "Sci-Fi Literature", "Hackathons"]
     },
-    audioScript: "Hey, Future Innovator. It's clear you've got a massive drive to build and create. That's why Computer Science is such a perfect match—it gives you the structural logic you need to turn those big ideas into reality. You're not just looking for a degree; you're building a foundation to lead the tech world. Let's see what you can build."
+    audioScript: "Hey, Future Innovator. It's clear you've got a massive drive to build and create. That's why Computer Science is such a perfect match—it gives you the structural logic you need to turn those big ideas into reality. You're not just looking for a degree; you're building a foundation to lead the tech world. Let's see what you can build.",
+    userData: {
+      name: "Future Leader",
+      contact: ""
+    }
   };
 };

@@ -20,17 +20,6 @@ export const SKILL_COLUMNS = [
 
 export const QUESTIONS_12TH: Question[] = [
   {
-    id: 6,
-    text: "What would your typical approach be?",
-    inputType: 'choice',
-    options: [
-      { label: "Research and analyze all the data first.", value: "Analytical Approach" },
-      { label: "Trust your gut and experiment with solutions.", value: "Intuitive/Trial & Error" },
-      { label: "Talk it out with others to brainstorm.", value: "Collaborative/Social" },
-      { label: "Break it down into a step-by-step process.", value: "Structured/Procedural" }
-    ]
-  },
-  {
     id: 1,
     text: "Which subject do you excel in?",
     subtext: "(e.g., Math, Biology, English, History, Art, Code, etc.)",
@@ -77,7 +66,17 @@ export const QUESTIONS_12TH: Question[] = [
       { label: "Achieving a position of leadership and influence.", value: "Leadership" }
     ]
   },
-
+  {
+    id: 6,
+    text: "What would your typical approach be?",
+    inputType: 'choice',
+    options: [
+      { label: "Research and analyze all the data first.", value: "Analytical Approach" },
+      { label: "Trust your gut and experiment with solutions.", value: "Intuitive/Trial & Error" },
+      { label: "Talk it out with others to brainstorm.", value: "Collaborative/Social" },
+      { label: "Break it down into a step-by-step process.", value: "Structured/Procedural" }
+    ]
+  },
   {
     id: 7,
     text: "What kind of environment would you thrive in?",
@@ -104,13 +103,6 @@ export const QUESTIONS_12TH: Question[] = [
     options: []
   },
   {
-    id: 14,
-    text: "What were your top 3 subjects in 12th Grade?",
-    subtext: "(e.g. Physics, Math, Computer Science)",
-    inputType: 'text',
-    options: []
-  },
-  {
     id: 10,
     text: "Are there any specific degrees already in mind?",
     subtext: "(e.g. B.Tech CS, BBA, MBBS, or 'Not sure yet')",
@@ -125,19 +117,11 @@ export const QUESTIONS_12TH: Question[] = [
     options: []
   },
   {
-    id: 15,
-    text: "What were your top 3 subjects in 10th Grade?",
-    subtext: "(e.g. Science, Math, Social Studies)",
-    inputType: 'text',
-    options: []
-  },
-  {
     id: 13,
     text: "Final Step: Your Details",
     subtext: "To generate your personalized career report.",
     inputType: 'contact_details',
-    // Live Payment Link (Razorpay)
-    paymentLink: "https://pages.razorpay.com/pl_SCPq1xHMxbzY1b/view",
+    paymentLink: 'https://pages.razorpay.com/pl_SCPq1xHMxbzY1b/view',
     options: []
   }
 ];
@@ -178,8 +162,7 @@ export const QUESTIONS_UG: Question[] = [
     text: "Final Step: Your Details",
     subtext: "To generate your personalized career report.",
     inputType: 'contact_details',
-    // Live Payment Link (Razorpay)
-    paymentLink: "https://pages.razorpay.com/pl_SCPq1xHMxbzY1b/view",
+    paymentLink: 'https://pages.razorpay.com/pl_SCPq1xHMxbzY1b/view',
     options: []
   }
 ];
@@ -197,10 +180,6 @@ const PG_DEGREES = new Set([
 ]);
 
 const parseCoursesFromCSV = (csvData: string): Course[] => {
-  if (typeof csvData !== 'string') {
-    console.error("CSV Data is not a string:", csvData);
-    return [];
-  }
   const lines = csvData.trim().split('\n');
   const courses: Course[] = [];
 

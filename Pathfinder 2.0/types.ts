@@ -8,11 +8,9 @@ export interface Question {
   id: number;
   text: string;
   subtext?: string;
-  inputType?: 'choice' | 'text' | 'contact_details' | 'numeric_score';
+  inputType?: 'choice' | 'text';
   options?: Option[];
   placeholder?: string;
-  paymentLink?: string;
-
 }
 
 export interface Course {
@@ -21,24 +19,19 @@ export interface Course {
   category: string;
   description: string;
   tags?: string[]; // New: Keywords for better matching
-  weights?: Record<string, number>; // New: Skill weights associated with the course
 }
 
 // The structure expected from the Gemini API response
 export interface AnalysisResult {
-  userData?: {
-    name: string;
-    contact: string;
-  };
   archetype: {
     title: string;
     description: string;
     drivers: {
-      academic: { label: string; explanation: string };
-      passion: { label: string; explanation: string };
-      cognitive: { label: string; explanation: string };
-      domain: { label: string; explanation: string };
-      motivation: { label: string; explanation: string };
+      academic: string;
+      passion: string;
+      cognitive: string;
+      domain: string;
+      motivation: string;
     };
   };
   visionBoard: {
@@ -62,7 +55,6 @@ export interface AnalysisResult {
     focus: string;
     courseName: string;
     insight: string;
-    relevanceScore: number; // NEW: 0-100
   }[];
   communityStats: {
     headline: string;
@@ -72,17 +64,6 @@ export interface AnalysisResult {
     }[];
     commonInterests: string[];
   };
-  degreePreferenceAnalysis?: {
-    statedPreference: string;
-    matchedCourses: {
-      degree: string;
-      courseName: string;
-      matchPercentage: number;
-      matchInsight: string;
-    }[];
-    overallInsight: string;
-  };
-  audioScript: string;
 }
 
 export type AnswerMap = Record<number, string>;

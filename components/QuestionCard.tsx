@@ -4,15 +4,20 @@ import { Question } from '../types';
 interface QuestionCardProps {
   question: Question;
   onAnswer: (value: string) => void;
+  onBack: () => void;
   currentStep: number;
   totalSteps: number;
 }
 
-export const QuestionCard: React.FC<QuestionCardProps> = ({ question, onAnswer, currentStep, totalSteps }) => {
+export const QuestionCard: React.FC<QuestionCardProps> = ({ question, onAnswer, onBack, currentStep, totalSteps }) => {
   const [textAnswer, setTextAnswer] = useState('');
 
   useEffect(() => {
     setTextAnswer('');
+    setNumericScore('');
+    setNumericError('');
+    setContactError('');
+    // We don't clear contact inputs to allow persistence if beneficial, but here we reset local state on new question
   }, [question.id]);
 
   const handleTextSubmit = () => {
@@ -37,8 +42,23 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question, onAnswer, 
     onAnswer(JSON.stringify({ name: contactName, contact: contactNumber }));
   };
 
+  // State for Numeric Score (0-100)
+  const [numericScore, setNumericScore] = useState('');
+  const [numericError, setNumericError] = useState('');
+
+  const handleNumericSubmit = () => {
+    const val = parseFloat(numericScore);
+    if (isNaN(val) || val < 0 || val > 100) {
+      setNumericError("Please enter a valid percentage between 0 and 100.");
+      return;
+    }
+    setNumericError("");
+    onAnswer(numericScore);
+  };
+
   const isTextInput = question.inputType === 'text';
   const isContactInput = question.inputType === 'contact_details';
+  const isNumericScoreInput = question.inputType === 'numeric_score';
 
   return (
     <div className="w-full max-w-3xl mx-auto animate-fade-in-up">
@@ -127,7 +147,41 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question, onAnswer, 
                 disabled={!contactName.trim() || contactNumber.length !== 10}
                 className="mt-6 w-full bg-[#ED1164] hover:bg-[#C40E53] text-white font-bold py-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xl hover:shadow-pink-500/20 hover:-translate-y-0.5 flex items-center justify-center gap-2 group"
               >
-                <span>Submit Details</span>
+                <span>{question.paymentLink ? "Proceed to Payment" : "Submit Details"}</span>
+                <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+              </button>
+            </div>
+          ) : isNumericScoreInput ? (
+            <div className="mt-8">
+              <label className="block text-slate-500 text-sm font-bold mb-2 uppercase tracking-wider">Your Score (%)</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                className={`w-full p-4 bg-slate-50 border-2 rounded-xl focus:bg-white focus:ring-4 transition-all text-lg text-slate-900 placeholder-slate-400 outline-none ${numericError ? 'border-red-400 focus:border-red-500 focus:ring-red-100' : 'border-slate-200 focus:border-[#ED1164] focus:ring-[#ED1164]/20'
+                  }`}
+                placeholder="e.g. 85"
+                value={numericScore}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  // Allow empty string for clearing, otherwise validate range loosely for input
+                  if (val === '' || (parseFloat(val) >= 0 && parseFloat(val) <= 100)) {
+                    setNumericScore(val);
+                    if (numericError) setNumericError('');
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleNumericSubmit();
+                }}
+              />
+              {numericError && <p className="mt-2 text-red-500 text-sm font-medium">{numericError}</p>}
+
+              <button
+                onClick={handleNumericSubmit}
+                disabled={!numericScore}
+                className="mt-6 w-full bg-[#ED1164] hover:bg-[#C40E53] text-white font-bold py-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xl hover:shadow-pink-500/20 hover:-translate-y-0.5 flex items-center justify-center gap-2 group"
+              >
+                <span>Continue</span>
                 <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
               </button>
             </div>
@@ -153,6 +207,20 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question, onAnswer, 
               ))}
             </div>
           )}
+
+          {/* BACK BUTTON */}
+          {currentStep > 1 && (
+            <div className="mt-8 flex justify-center">
+              <button
+                onClick={onBack}
+                className="text-slate-400 font-bold text-sm hover:text-slate-600 transition-colors flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-slate-50"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+                <span>Back to previous question</span>
+              </button>
+            </div>
+          )}
+
         </div>
       </div>
     </div>

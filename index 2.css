@@ -305,282 +305,85 @@ body {
 
 @media print {
 
-  /* Hide all main content/UI by default */
-  body * {
-    visibility: hidden;
-  }
-
-  /* Hide the screen results container specifically */
-  #results-container,
-  nav,
-  footer,
+  /* Hide UI elements */
   button,
   .no-print {
     display: none !important;
   }
 
-  /* Show only the PDF Report Template and its children */
-  #print-wrapper,
-  #print-wrapper * {
-    visibility: visible;
-  }
-
-  /* Position the template at top left */
-  #print-wrapper {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    display: block !important;
-    background-color: white;
-  }
-
-  /* Reset container to allow print flow */
-  #pdf-report-target {
-    width: 100% !important;
-    max-width: none !important;
-    margin: 0 !important;
-    box-shadow: none !important;
-  }
-
-  /* Allow background graphics */
+  /* Force desktop layout */
   body {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
-    background-color: white !important;
   }
 
-  @page {
-    size: A4 portrait;
-    margin: 0;
+  /* Reuse the rigid grid logic from .pdf-export-mode */
+  .header-flex {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    gap: 30px !important;
+    margin-bottom: 30px !important;
+    border-bottom: 2px solid #e2e8f0 !important;
+    padding-bottom: 20px !important;
   }
-}
 
-/* =========================================
-   PDF GENERATION FIXES (HTML2CANVAS COMPATIBILITY)
-   ========================================= */
-/* 
-   html2canvas does not support 'oklch' colors (used by Tailwind v4).
-   We must override all color utility classes used in the PDF template 
-   with explicit HEX values to prevent crashing.
-*/
+  .drivers-grid {
+    display: flex !important;
+    width: 100% !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+    margin-bottom: 30px !important;
+    background-color: #f8fafc !important;
+  }
 
-/* ROOT & DESCENDANT OVERRIDES (Chained selector for root, space for descendants) */
-#pdf-report-target.text-slate-900,
-#pdf-report-target .text-slate-900 {
-  color: #0f172a !important;
-}
+  .drivers-grid>div {
+    flex: 1 !important;
+    border-right: 1px solid #e2e8f0 !important;
+    padding: 15px !important;
+    text-align: center !important;
+  }
 
-#pdf-report-target.text-slate-800,
-#pdf-report-target .text-slate-800 {
-  color: #1e293b !important;
-}
+  .drivers-grid>div:last-child {
+    border-right: none !important;
+  }
 
-#pdf-report-target.text-slate-700,
-#pdf-report-target .text-slate-700 {
-  color: #334155 !important;
-}
+  .vision-grid {
+    display: flex !important;
+    gap: 20px !important;
+    margin-bottom: 30px !important;
+  }
 
-#pdf-report-target.text-slate-600,
-#pdf-report-target .text-slate-600 {
-  color: #475569 !important;
-}
+  .vision-grid>div:first-child {
+    width: 65% !important;
+    flex: 0 0 65% !important;
+  }
 
-#pdf-report-target.text-slate-500,
-#pdf-report-target .text-slate-500 {
-  color: #64748b !important;
-}
+  .vision-grid>div:last-child {
+    width: 35% !important;
+    flex: 0 0 35% !important;
+  }
 
-#pdf-report-target.text-slate-400,
-#pdf-report-target .text-slate-400 {
-  color: #94a3b8 !important;
-}
+  .content-grid {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    gap: 40px !important;
+  }
 
-#pdf-report-target.text-slate-300,
-#pdf-report-target .text-slate-300 {
-  color: #cbd5e1 !important;
-}
+  .skill-section {
+    width: 30% !important;
+    page-break-inside: avoid !important;
+  }
 
-#pdf-report-target.bg-slate-50,
-#pdf-report-target .bg-slate-50 {
-  background-color: #f8fafc !important;
-}
+  .rec-section {
+    width: 70% !important;
+  }
 
-#pdf-report-target.bg-slate-100,
-#pdf-report-target .bg-slate-100 {
-  background-color: #f1f5f9 !important;
-}
-
-#pdf-report-target.bg-slate-200,
-#pdf-report-target .bg-slate-200 {
-  background-color: #e2e8f0 !important;
-}
-
-#pdf-report-target.bg-slate-900,
-#pdf-report-target .bg-slate-900 {
-  background-color: #0f172a !important;
-}
-
-#pdf-report-target.border-slate-100,
-#pdf-report-target .border-slate-100 {
-  border-color: #f1f5f9 !important;
-}
-
-#pdf-report-target.border-slate-200,
-#pdf-report-target .border-slate-200 {
-  border-color: #e2e8f0 !important;
-}
-
-/* Pink Palette */
-#pdf-report-target.text-pink-600,
-#pdf-report-target .text-pink-600 {
-  color: #db2777 !important;
-}
-
-#pdf-report-target.text-pink-500,
-#pdf-report-target .text-pink-500 {
-  color: #ec4899 !important;
-}
-
-#pdf-report-target.text-pink-400,
-#pdf-report-target .text-pink-400 {
-  color: #f472b6 !important;
-}
-
-#pdf-report-target.bg-pink-50,
-#pdf-report-target .bg-pink-50 {
-  background-color: #fdf2f8 !important;
-}
-
-#pdf-report-target.bg-pink-100,
-#pdf-report-target .bg-pink-100 {
-  background-color: #fce7f3 !important;
-}
-
-#pdf-report-target.bg-pink-200,
-#pdf-report-target .bg-pink-200 {
-  background-color: #fbcfe8 !important;
-}
-
-#pdf-report-target.bg-pink-500,
-#pdf-report-target .bg-pink-500 {
-  background-color: #ec4899 !important;
-}
-
-#pdf-report-target.border-pink-100,
-#pdf-report-target .border-pink-100 {
-  border-color: #fce7f3 !important;
-}
-
-#pdf-report-target.border-pink-200,
-#pdf-report-target .border-pink-200 {
-  border-color: #fbcfe8 !important;
-}
-
-/* Blue/Indigo Palette */
-#pdf-report-target.text-blue-600,
-#pdf-report-target .text-blue-600 {
-  color: #2563eb !important;
-}
-
-#pdf-report-target.text-blue-700,
-#pdf-report-target .text-blue-700 {
-  color: #1d4ed8 !important;
-}
-
-#pdf-report-target.bg-blue-50,
-#pdf-report-target .bg-blue-50 {
-  background-color: #eff6ff !important;
-}
-
-#pdf-report-target.bg-blue-100,
-#pdf-report-target .bg-blue-100 {
-  background-color: #dbeafe !important;
-}
-
-#pdf-report-target.bg-blue-500,
-#pdf-report-target .bg-blue-500 {
-  background-color: #3b82f6 !important;
-}
-
-#pdf-report-target.border-blue-200,
-#pdf-report-target .border-blue-200 {
-  border-color: #bfdbfe !important;
-}
-
-#pdf-report-target.border-blue-300,
-#pdf-report-target .border-blue-300 {
-  border-color: #93c5fd !important;
-}
-
-#pdf-report-target.bg-indigo-50,
-#pdf-report-target .bg-indigo-50 {
-  background-color: #eef2ff !important;
-}
-
-#pdf-report-target.bg-white,
-#pdf-report-target .bg-white {
-  background-color: #ffffff !important;
-}
-
-#pdf-report-target.text-white,
-#pdf-report-target .text-white {
-  color: #ffffff !important;
-}
-
-/* CRITICAL: Disable complex CSS features that use oklch or confuse html2canvas */
-#pdf-report-target * {
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  filter: none !important;
-}
-
-/* SVG Overrides - Forces inheritance of the overridden hex color from parent if not explicit hex */
-#pdf-report-target svg,
-#pdf-report-target path,
-#pdf-report-target circle,
-#pdf-report-target rect,
-#pdf-report-target line,
-#pdf-report-target polyline,
-#pdf-report-target polygon,
-#pdf-report-target text {
-  /* We cannot force valid hex if they rely on computed theme colors. 
-     But most Recharts elements use inline styles.
-     If we force 'currentColor' and the parent color is safely overridden to HEX, it works. */
-  stroke: currentColor;
-  fill: currentColor;
-}
-
-/* Revert specific cases where we want transparency */
-#pdf-report-target [fill="none"] {
-  fill: none !important;
-}
-
-#pdf-report-target [stroke="none"] {
-  stroke: none !important;
-}
-
-/* Disable gradients (which use oklch stops) but keep explicit background images if needed */
-#pdf-report-target [class*="bg-gradient-"] {
-  background-image: none !important;
-  background-color: #ffffff !important;
-  /* Fallback */
-}
-
-/* Specific Gradient Replacements */
-#pdf-report-target.from-pink-50,
-#pdf-report-target .from-pink-50 {
-  background-color: #fdf2f8 !important;
-}
-
-#pdf-report-target.from-blue-50,
-#pdf-report-target .from-blue-50 {
-  background-color: #eff6ff !important;
-}
-
-/* Hide decorative blurs */
-#pdf-report-target [class*="blur-"] {
-  display: none !important;
+  .rec-card,
+  .pathways-grid,
+  .stats-grid {
+    page-break-inside: avoid !important;
+  }
 }

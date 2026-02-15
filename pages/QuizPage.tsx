@@ -26,9 +26,11 @@ export const QuizPage: React.FC = () => {
 
     const handleAnswer = async (value: string) => {
         const questionId = activeQuestions[currentQuestionIndex].id;
+        const currentQuestion = activeQuestions[currentQuestionIndex];
         const nextAnswers = { ...answers, [questionId]: value };
         setAnswers(nextAnswers);
 
+        // Check if this is the final step or has a payment link
         if (currentQuestionIndex < activeQuestions.length - 1) {
             setCurrentQuestionIndex(prev => prev + 1);
         } else {
@@ -39,11 +41,12 @@ export const QuizPage: React.FC = () => {
                 timestamp: Date.now()
             }));
 
-            // 2. REDIRECT TO PAYMENT GATEWAY
-            const paymentLink = activeQuestions[currentQuestionIndex].paymentLink;
-            if (paymentLink) {
-                window.location.href = paymentLink;
+            // 2. CHECK FOR PAYMENT REDIRECT
+            if (currentQuestion.paymentLink) {
+                // Redirect to Payment Gateway
+                window.location.href = currentQuestion.paymentLink;
             } else {
+                // No payment link? Go straight to results (Fallback)
                 navigate('/results');
             }
         }
@@ -90,6 +93,12 @@ export const QuizPage: React.FC = () => {
         );
     }
 
+    const handleBack = () => {
+        if (currentQuestionIndex > 0) {
+            setCurrentQuestionIndex(prev => prev - 1);
+        }
+    };
+
     // QUIZ LAYOUT
     return (
         <div id="app-root" className="min-h-screen bg-white text-slate-900 font-sans">
@@ -111,6 +120,7 @@ export const QuizPage: React.FC = () => {
                 <QuestionCard
                     question={activeQuestions[currentQuestionIndex]}
                     onAnswer={handleAnswer}
+                    onBack={handleBack}
                     currentStep={currentQuestionIndex + 1}
                     totalSteps={activeQuestions.length}
                 />
